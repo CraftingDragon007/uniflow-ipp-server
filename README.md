@@ -5,11 +5,15 @@ Secure Print. It accepts PDF print jobs on a loopback address and can upload
 them to the user's cloud queue. The project targets Arch Linux and includes a
 desktop [login app](login-app/README.md) for obtaining tenant credentials.
 
-This is an experimental client, not an NT-ware product. Cloud submission has
-been verified with one tenant through the packaged systemd service; other
-tenants and printing at a physical device have not been tested. The package's
-default configuration **holds PDFs locally and does not upload them** until
-cloud access is configured.
+> **Disclaimer:** This independent project is not affiliated with, endorsed
+> by, or supported by NT-ware, the company behind uniFLOW. It is not an
+> official uniFLOW client.
+
+This is an experimental client. Cloud submission has been verified with one
+tenant through the packaged systemd service; other tenants and printing at a
+physical device have not been tested. The package's default configuration
+**holds PDFs locally and does not upload them** until cloud access is
+configured.
 
 ## Requirements
 
