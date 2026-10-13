@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,12 +26,45 @@ type DeviceAuthorizationResponse struct {
 }
 
 type TokenResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	Scope        string    `json:"scope,omitempty"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token,omitempty"`
+	TokenType    string       `json:"token_type"`
+	ExpiresIn    tokenSeconds `json:"expires_in"`
+	ExpiresAt    time.Time    `json:"expires_at"`
+	Scope        string       `json:"scope,omitempty"`
+}
+
+// SmartClient token responses can encode expires_in as a JSON number or a
+// decimal string. Persist it as a JSON number in our token file.
+type tokenSeconds int
+
+func (s *tokenSeconds) UnmarshalJSON(data []byte) error {
+	if len(data) > 0 && data[0] == '"' {
+		var value string
+		if err := json.Unmarshal(data, &value); err != nil {
+			return fmt.Errorf("invalid expires_in type")
+		}
+		if value == "" {
+			return fmt.Errorf("invalid expires_in value")
+		}
+		for i := 0; i < len(value); i++ {
+			if value[i] < '0' || value[i] > '9' {
+				return fmt.Errorf("invalid expires_in value")
+			}
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid expires_in value")
+		}
+		*s = tokenSeconds(n)
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(data, &n); err != nil {
+		return fmt.Errorf("invalid expires_in type")
+	}
+	*s = tokenSeconds(n)
+	return nil
 }
 
 type AuthConfig struct {
@@ -167,8 +201,8 @@ func (m *TokenManager) storeLocked(tok *TokenResponse) error {
 	if err := validateToken(tok); err != nil {
 		return err
 	}
-	if tok.ExpiresIn <= 0 {
-		return fmt.Errorf("token response requires positive expires_in")
+	if tok.ExpiresIn <= 0 || tok.ExpiresIn > 31_536_000 {
+		return fmt.Errorf("token response requires expires_in between 1 and 31536000 seconds")
 	}
 	tok.ExpiresAt = time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
 	old := m.token

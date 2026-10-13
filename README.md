@@ -80,6 +80,8 @@ tenant's actual `token_endpoint`, `oauth_client_id`, `oauth_client_secret`
 files containing client secrets, including from other local users. Tokens
 with unknown expiration are refreshed or rejected, never reused indefinitely.
 Refresh responses are persisted atomically with mode `0600`.
+The tenant's OAuth refresh response may encode `expires_in` as a decimal
+string; the server accepts that form and persists it as a JSON number.
 For credential-provisioned SmartClient refreshes with a client secret,
 `token_type` is normalized to `Bearer` with a compatibility warning if absent
 or given a different string label. The native client ignores that label and

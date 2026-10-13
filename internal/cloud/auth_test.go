@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,20 +13,19 @@ import (
 	"time"
 )
 
-func tokenManager(t *testing.T, handler http.HandlerFunc) (*TokenManager, *httptest.Server) {
+func tokenManager(t *testing.T, handler http.HandlerFunc) *TokenManager {
 	t.Helper()
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
 	return NewTokenManager(AuthConfig{
 		ClientID: "test-client", Scope: "test-scope",
-		TokenEndpoint: srv.URL, DeviceEndpoint: srv.URL,
-		TokenPath: filepath.Join(t.TempDir(), "token.json"),
-	}), srv
+		TokenEndpoint: "http://example.invalid/token", DeviceEndpoint: "http://example.invalid/device",
+		TokenPath:  filepath.Join(t.TempDir(), "token.json"),
+		HTTPClient: &http.Client{Transport: handlerTransport{handler}},
+	})
 }
 
 func TestAccessTokenLifecycle(t *testing.T) {
 	var requests atomic.Int32
-	m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+	m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		if r.Header.Get("X-ClientType") != "SmartClientForMac" {
 			t.Error("missing native token-exchange client header")
@@ -84,7 +82,7 @@ func TestTokenFailures(t *testing.T) {
 		`invalid JSON`,
 	} {
 		t.Run(response, func(t *testing.T) {
-			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(response)) })
+			m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(response)) })
 			m.token = &TokenResponse{AccessToken: "old", TokenType: "Bearer", RefreshToken: "test-refresh"}
 			if _, err := m.AccessToken(context.Background()); err == nil {
 				t.Fatal("invalid response accepted")
@@ -95,7 +93,7 @@ func TestTokenFailures(t *testing.T) {
 			}
 		})
 	}
-	m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+	m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"error":"invalid_grant","error_description":"test-private-value"}`))
 	})
@@ -112,7 +110,7 @@ func TestTokenFailures(t *testing.T) {
 func TestNativeRefreshWithImplicitBearer(t *testing.T) {
 	for _, typeField := range []string{"", `,"token_type":""`, `,"token_type":null`, `,"token_type":"JWT"`, `,"token_type":"Basic"`} {
 		t.Run(typeField, func(t *testing.T) {
-			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+			m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(`{"access_token":"test-native","expires_in":3600` + typeField + `}`))
 			})
 			m.cfg.ClientSecret = "test-client-secret"
@@ -132,10 +130,43 @@ func TestNativeRefreshWithImplicitBearer(t *testing.T) {
 	}
 }
 
+func TestNativeRefreshWithStringExpiry(t *testing.T) {
+	m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"test-native","expires_in":"3600","token_type":"JWT"}`))
+	})
+	m.cfg.ClientSecret = "test-client-secret"
+	m.token = &TokenResponse{AccessToken: "old", TokenType: "Bearer", RefreshToken: "test-refresh"}
+	if got, err := m.AccessToken(context.Background()); err != nil || got != "test-native" {
+		t.Fatalf("string expiry refresh failed: %v", err)
+	}
+	data, err := os.ReadFile(m.cfg.TokenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted map[string]json.RawMessage
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if string(persisted["expires_in"]) != "3600" {
+		t.Fatalf("expiry not persisted as a number: %s", persisted["expires_in"])
+	}
+}
+
+func TestStringExpiryRejectsInvalidValues(t *testing.T) {
+	for _, value := range []string{`""`, `"3.5"`, `"-1"`, `"invalid"`, `"9999999999999999999999999"`} {
+		t.Run(value, func(t *testing.T) {
+			var token TokenResponse
+			if err := json.Unmarshal([]byte(`{"access_token":"test","token_type":"Bearer","expires_in":`+value+`}`), &token); err == nil {
+				t.Fatal("invalid string expiry accepted")
+			}
+		})
+	}
+}
+
 func TestNativeRefreshRejectsMalformedType(t *testing.T) {
 	for _, typeField := range []string{`42`, `true`, `{}`} {
 		t.Run(typeField, func(t *testing.T) {
-			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+			m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(`{"access_token":"test-native","expires_in":3600,"token_type":` + typeField + `}`))
 			})
 			m.cfg.ClientSecret = "test-client-secret"
@@ -151,7 +182,7 @@ func TestNativeRefreshRejectsMalformedType(t *testing.T) {
 }
 
 func TestSaveReplacesInsecureFile(t *testing.T) {
-	m, _ := tokenManager(t, func(http.ResponseWriter, *http.Request) {})
+	m := tokenManager(t, func(http.ResponseWriter, *http.Request) {})
 	if err := os.WriteFile(m.cfg.TokenPath, []byte("{}"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +198,7 @@ func TestSaveReplacesInsecureFile(t *testing.T) {
 
 func TestDevicePolling(t *testing.T) {
 	var calls atomic.Int32
-	m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+	m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 		switch calls.Add(1) {
 		case 1:
 			w.WriteHeader(http.StatusBadRequest)
@@ -186,7 +217,7 @@ func TestDevicePolling(t *testing.T) {
 
 func TestDeviceSlowDownAndDenial(t *testing.T) {
 	var calls atomic.Int32
-	m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+	m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		code := "slow_down"
 		if calls.Add(1) > 1 {
@@ -205,7 +236,7 @@ func TestDeviceSlowDownAndDenial(t *testing.T) {
 }
 
 func TestDeviceCancellationAndInvalidResponse(t *testing.T) {
-	m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{}`)) })
+	m := tokenManager(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{}`)) })
 	if _, err := m.BeginDeviceAuthorization(context.Background()); err == nil {
 		t.Fatal("empty device response accepted")
 	}
