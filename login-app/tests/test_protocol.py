@@ -179,10 +179,13 @@ class ProtocolTests(unittest.TestCase):
                 with self.assertRaises(LoginError):
                     client.exchange(credentials())
         error = HTTPError("https://private.example.invalid/code-secret", 400, "test-private-message", {}, Response(b"test-private-response"))
-        with patch.object(client.opener, "open", side_effect=error):
+        with self.assertLogs("uniflow_login", level="INFO") as captured, patch.object(client.opener, "open", side_effect=error):
             with self.assertRaises(LoginError) as caught:
                 client.exchange(credentials())
         self.assertEqual(str(caught.exception), "OAuth token endpoint returned HTTP 400; restart login.")
+        output = "\n".join(captured.output)
+        for secret in ("code-secret", "test-private-message", "test-private-response", "test-secret+&"):
+            self.assertNotIn(secret, output)
 
     def test_private_atomic_export_and_service_paths(self):
         with tempfile.TemporaryDirectory() as temp:

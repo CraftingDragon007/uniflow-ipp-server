@@ -1,4 +1,5 @@
 import json
+import logging
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 
 from uniflow_login.app import LoginWindow
 from uniflow_login.browser import RegistrationPage
+from uniflow_login.diagnostics import LOGGER_NAME
 from uniflow_login.protocol import OAuthClient, RegistrationSession
 from test_protocol import Response, authorization_message, tenant
 
@@ -98,6 +100,22 @@ document.body.appendChild(frame);
             self.assertFalse(self.page.acceptNavigationRequest(QUrl(url), None, True))
         self.assertTrue(self.page.acceptNavigationRequest(QUrl("https://identity.example.invalid/login"), None, True))
 
+    def test_page_probe_and_console_logging_are_safe(self):
+        self.load_html("<html><script>window.PageConfig={ClientType:'SmartClientForMac'}</script></html>")
+        with self.assertLogs(LOGGER_NAME, level="INFO") as captured:
+            self.page.log_diagnostics()
+            self.assertTrue(wait_for(lambda: any("client_type=SmartClientForMac" in line for line in captured.output)))
+            self.page.runJavaScript("console.error('TypeError: private-secret?code=private-code')")
+            self.assertTrue(wait_for(lambda: any("JavaScript TypeError" in line for line in captured.output)))
+        output = "\n".join(captured.output)
+        self.assertIn("'authenticationHandler': True", output)
+        self.assertNotIn("private-secret", output)
+        self.assertNotIn("private-code", output)
+
+    def test_bridge_diagnostics_do_not_accept_arbitrary_text(self):
+        with self.assertNoLogs(LOGGER_NAME):
+            self.page.bridge.diagnostic("private-secret")
+
 
 class GuiFlowTests(unittest.TestCase):
     @classmethod
@@ -105,7 +123,25 @@ class GuiFlowTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
         cls.app.setQuitOnLastWindowClosed(False)
 
+    def test_visible_diagnostics_and_waiting_state(self):
+        window = LoginWindow()
+        window.show()
+        logger = logging.getLogger(LOGGER_NAME)
+        old_level = logger.level
+        logger.setLevel(logging.INFO)
+        try:
+            window.log_browser_diagnostics()
+            self.assertTrue(wait_for(lambda: "session_active=False" in window.logs.toPlainText()))
+            self.assertIn("callback_received=False", window.logs.toPlainText())
+        finally:
+            logger.setLevel(old_level)
+            window.close()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
     def test_browser_to_oauth_to_server_configuration(self):
+        logger = logging.getLogger(LOGGER_NAME)
+        old_level = logger.level
+        logger.setLevel(logging.INFO)
         window = LoginWindow()
         window.tenant = tenant()
         window.management.setText(tenant().domain)
@@ -142,6 +178,10 @@ function deliverRegistration(data) {
                 self.assertTrue(wait_for(lambda: window.result is not None and window.thread is None), window.status.text())
             self.assertTrue(window.export_button.isEnabled())
             self.assertEqual(window.result.token["access_token"], "test-qt-access")
+            self.assertTrue(wait_for(lambda: "OAuth login succeeded" in window.logs.toPlainText()))
+            self.assertIn("Registration response decrypted and validated", window.logs.toPlainText())
+            for secret in ("test-qt-access", "test-qt-refresh", window.result.credentials.client_secret, message):
+                self.assertNotIn(secret, window.logs.toPlainText())
             with tempfile.TemporaryDirectory() as temp, patch("uniflow_login.app.QFileDialog.getExistingDirectory", return_value=temp):
                 window.export_config()
                 bundles = list(Path(temp).iterdir())
@@ -157,6 +197,7 @@ function deliverRegistration(data) {
         finally:
             window.close()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            logger.setLevel(old_level)
 
 
 if __name__ == "__main__":

@@ -72,6 +72,37 @@ undefined-symbol import error, use the isolated `uv run` command above rather
 than mixing system Qt libraries with pip-installed bindings. The source
 runtime and browser tests use matching PySide6/Qt wheels.
 
+## Diagnostics
+
+Application logs appear in the terminal and in the read-only panel below the
+browser by default. To capture a more detailed run from the server repository:
+
+```sh
+uv run --project login-app uniflow-login --plist /path/to/.tenantcfg.plist \
+  --debug --log-file ~/uniflow-login.log
+```
+
+The optional log file is appended to, made mode `0600`, and cannot be a symlink.
+Logs show navigation/load error codes, renderer failures, popup creation,
+bridge initialization, callback receipt/validation, OAuth HTTP status and TLS
+failure categories. `--debug` adds request-origin/resource-type events.
+**Log browser diagnostics** probes the current tenant page's native client
+type and callback availability. A waiting-state snapshot is also logged every
+30 seconds until a callback arrives.
+
+URL paths, query strings, fragments, request/response bodies, authorization
+codes, tokens and client secrets are never logged. Provider JavaScript console
+text is not copied verbatim: only fixed error categories and known bridge
+identifiers are retained. Uncaught Python errors report their class and
+function/line stack, not potentially secret exception text. Logs still include
+tenant/identity-provider hostnames; review them before sharing.
+
+The macOS identity adjustment addresses a confirmed contract mismatch, but
+the live post-MFA spinner was still reported afterward. The diagnostics are
+intended to distinguish a missing callback/bridge failure from a rejected
+registration response or failed token exchange; live completion is not yet
+established.
+
 ## Privacy and compatibility
 
 The browser profile is off-the-record: cookies and cache stay in memory.

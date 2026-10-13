@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import shlex
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Qt, QUrl, Signal, qVersion
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -15,9 +16,28 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
-from .browser import RegistrationPage
+from .browser import RegistrationPage, RequestLogger
+from .diagnostics import FORMAT, LOGGER_NAME, configure_logging, report_uncaught_exception
 from .export import export_bundle
 from .protocol import Credentials, LoginError, LoginResult, OAuthClient, RegistrationSession, Tenant
+
+
+logger = logging.getLogger(__name__)
+
+
+class LogEmitter(QObject):
+    line = Signal(str)
+
+
+class WindowLogHandler(logging.Handler):
+    def __init__(self, window):
+        super().__init__()
+        self.emitter = LogEmitter(window)
+        self.emitter.line.connect(window.logs.appendPlainText)
+        self.setFormatter(logging.Formatter(FORMAT, datefmt="%H:%M:%S"))
+
+    def emit(self, record):
+        self.emitter.line.emit(self.format(record))
 
 
 class TokenRequest(QThread):
@@ -56,6 +76,9 @@ class LoginWindow(QMainWindow):
         self.popups = []
         self.closing = False
         self.callback_consumed = False
+        self.diagnostic_timer = QTimer(self)
+        self.diagnostic_timer.setInterval(30_000)
+        self.diagnostic_timer.timeout.connect(self.log_browser_diagnostics)
 
         self.import_button = QPushButton("Open tenant plist...")
         self.import_button.clicked.connect(self.choose_plist)
@@ -68,8 +91,10 @@ class LoginWindow(QMainWindow):
         self.export_button = QPushButton("Export server configuration...")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_config)
+        self.diagnostics_button = QPushButton("Log browser diagnostics")
+        self.diagnostics_button.clicked.connect(self.log_browser_diagnostics)
         toolbar = QHBoxLayout()
-        for button in (self.import_button, self.login_button, self.cancel_button, self.export_button):
+        for button in (self.import_button, self.login_button, self.cancel_button, self.export_button, self.diagnostics_button):
             toolbar.addWidget(button)
         self.tenant_label = QLabel("Select the .tenantcfg.plist from your SmartClient installer.")
         self.tenant_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -84,6 +109,11 @@ class LoginWindow(QMainWindow):
         self.instructions.setReadOnly(True)
         self.instructions.setMaximumHeight(150)
         self.instructions.hide()
+        self.logs = QPlainTextEdit()
+        self.logs.setReadOnly(True)
+        self.logs.setMaximumHeight(160)
+        self.logs.setMaximumBlockCount(1000)
+        self.logs.setPlaceholderText("Login diagnostics (credentials and provider console text are suppressed)")
         layout = QVBoxLayout()
         layout.addLayout(toolbar)
         layout.addWidget(self.tenant_label)
@@ -92,9 +122,13 @@ class LoginWindow(QMainWindow):
         layout.addWidget(self.status)
         layout.addWidget(self.browser, 1)
         layout.addWidget(self.instructions)
+        layout.addWidget(self.logs)
         root = QWidget()
         root.setLayout(layout)
         self.setCentralWidget(root)
+        self.log_handler = WindowLogHandler(self)
+        logging.getLogger(LOGGER_NAME).addHandler(self.log_handler)
+        logger.info("Login diagnostics active; Qt=%s; authentication material is never logged", qVersion())
         if plist:
             self.load_plist(plist)
 
@@ -111,12 +145,14 @@ class LoginWindow(QMainWindow):
             return
         self.cancel_login()
         self.tenant = tenant
+        logger.info("Tenant plist loaded successfully")
         self.management.setText(tenant.domain)
         self.tenant_label.setText(f"{tenant.installer_name} | {tenant.domain} | {tenant.product_version}")
         self.login_button.setEnabled(True)
         self.status.setText("Plist loaded. Click Log in to open this tenant's registration page.")
 
     def show_error(self, message: str):
+        logger.error("%s", message)
         self.status.setText(message)
         QMessageBox.critical(self, "uniFLOW Login", message)
 
@@ -136,7 +172,10 @@ class LoginWindow(QMainWindow):
         ))
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
         self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
-        self.profile.downloadRequested.connect(lambda download: download.cancel())
+        self.request_logger = RequestLogger(self.profile)
+        self.profile.setUrlRequestInterceptor(self.request_logger)
+        self.profile.downloadRequested.connect(self.block_download)
+        logger.info("Login started: platform=Macintosh off_record=%s", self.profile.isOffTheRecord())
         old_page = self.browser.page()
         try:
             page = self.make_page(self.browser)
@@ -152,6 +191,22 @@ class LoginWindow(QMainWindow):
         self.cancel_button.setEnabled(True)
         self.status.setText("Sign in and complete any MFA inside the browser. TLS certificate verification is enabled.")
         self.browser.load(QUrl(self.session.registration_url()))
+        self.diagnostic_timer.start()
+
+    def block_download(self, download):
+        logger.warning("Browser download blocked")
+        download.cancel()
+
+    def log_browser_diagnostics(self):
+        logger.info(
+            "Login state session_active=%s callback_received=%s token_request_running=%s authenticated=%s popups=%s",
+            self.session is not None, self.callback_consumed,
+            bool(self.thread and self.thread.isRunning()), self.result is not None, len(self.popups),
+        )
+        for view in [self.browser] + list(self.popups):
+            page = view.page()
+            if isinstance(page, RegistrationPage):
+                page.log_diagnostics()
 
     def make_page(self, parent):
         session = self.session
@@ -180,6 +235,7 @@ class LoginWindow(QMainWindow):
         if self.session is None or self.profile is None:
             return None
         popup = QWebEngineView()
+        logger.info("Opening identity-provider popup")
         popup.setWindowTitle("uniFLOW identity-provider login")
         popup.resize(900, 750)
         popup.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -192,14 +248,18 @@ class LoginWindow(QMainWindow):
 
     def authenticate(self, data: str):
         if self.session is None or self.callback_consumed or self.closing:
+            logger.warning("Authentication callback ignored: no active session, duplicate callback, or closing window")
             return
         self.callback_consumed = True
+        self.diagnostic_timer.stop()
+        logger.info("Decoding native registration response")
         try:
             credentials = self.session.decode_authorization(data)
         except LoginError as exc:
             self.registration_finished(False)
             self.show_error(str(exc))
             return
+        logger.info("Registration response decrypted and validated")
         self.status.setText("Exchanging the tenant-issued authorization code for OAuth tokens...")
         self.import_button.setEnabled(False)
         self.login_button.setEnabled(False)
@@ -219,6 +279,7 @@ class LoginWindow(QMainWindow):
         if self.session is None or self.closing:
             return
         self.result = result
+        logger.info("OAuth login succeeded; configuration export is available")
         self.registration_finished(True)
         self.export_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
@@ -239,6 +300,9 @@ class LoginWindow(QMainWindow):
             self.close()
 
     def cancel_login(self):
+        if self.session is not None:
+            logger.info("Login cancelled; clearing in-memory browser session")
+        self.diagnostic_timer.stop()
         self.session = None
         self.result = None
         self.browser.stop()
@@ -283,6 +347,7 @@ class LoginWindow(QMainWindow):
             instructions = f"Run the server as your current user:\nuniflow-ipp-server --config {quote(directory / 'config.toml')}"
         self.instructions.setPlainText(instructions)
         self.instructions.show()
+        logger.info("Private configuration bundle exported; system_service=%s", self.system_service.isChecked())
         self.status.setText(f"Exported config.toml and token.json to {directory}. Both files are mode 0600.")
 
     def closeEvent(self, event):
@@ -293,12 +358,21 @@ class LoginWindow(QMainWindow):
             event.ignore()
             return
         event.accept()
+        logging.getLogger(LOGGER_NAME).removeHandler(self.log_handler)
+        self.log_handler.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Qt WebEngine uniFLOW tenant login and server configuration")
     parser.add_argument("--plist", type=Path, help="tenant .plist from the SmartClient installer")
+    parser.add_argument("--debug", action="store_true", help="verbose, credential-safe browser diagnostics")
+    parser.add_argument("--log-file", type=Path, help="append diagnostics to a private mode-0600 file")
     args = parser.parse_args()
+    try:
+        configure_logging(args.debug, args.log_file)
+    except OSError:
+        parser.error("Cannot open the log file. Choose a writable regular file, not a symlink.")
+    sys.excepthook = report_uncaught_exception
     app = QApplication([sys.argv[0]])
     window = LoginWindow(args.plist)
     window.show()

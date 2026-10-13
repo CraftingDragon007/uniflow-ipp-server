@@ -6,6 +6,7 @@ import getpass
 import hashlib
 import ipaddress
 import json
+import logging
 import plistlib
 import re
 import socket
@@ -24,6 +25,11 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.asymmetric import padding as rsa_padding
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+from .diagnostics import safe_origin
+
+
+logger = logging.getLogger(__name__)
 
 
 class LoginError(Exception):
@@ -246,6 +252,7 @@ class OAuthClient:
         self.opener = build_opener(_NoRedirect(), HTTPSHandler(context=context or ssl.create_default_context()))
 
     def exchange(self, credentials: Credentials) -> LoginResult:
+        logger.info("OAuth authorization-code exchange started; endpoint_origin=%s", safe_origin(credentials.token_uri))
         form = {
             "grant_type": "authorization_code",
             "client_id": credentials.client_id,
@@ -262,15 +269,18 @@ class OAuthClient:
         )
         try:
             with self.opener.open(request, timeout=30) as response:
+                logger.info("OAuth token endpoint returned HTTP %s", response.status)
                 if response.status != 200:
                     raise LoginError(f"OAuth token endpoint returned HTTP {response.status}.")
                 body = response.read((1 << 20) + 1)
         except HTTPError as exc:
             # Error descriptions and URLs can contain authorization material.
             status = exc.code
+            logger.error("OAuth token request rejected: HTTP %s (response body suppressed)", status)
             exc.close()
             raise LoginError(f"OAuth token endpoint returned HTTP {status}; restart login.") from None
         except (URLError, OSError, HTTPException) as exc:
+            logger.error("OAuth connection failed: exception_type=%s reason_type=%s", type(exc).__name__, type(getattr(exc, "reason", exc)).__name__)
             raise LoginError("OAuth token request failed. Check connectivity and trusted TLS certificates.") from exc
         if len(body) > 1 << 20:
             raise LoginError("OAuth token response exceeds the 1 MiB size limit.")
@@ -300,4 +310,5 @@ class OAuthClient:
             "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
             "scope": credentials.scope,
         }
+        logger.info("OAuth token response validated successfully; token contents suppressed")
         return LoginResult(replace(credentials, code=""), exported_token)
