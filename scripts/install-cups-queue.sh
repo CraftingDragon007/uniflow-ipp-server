@@ -3,12 +3,12 @@ set -e
 
 DEFAULT_QUEUE="uniflow_secure"
 DEFAULT_DISPLAY="uniFLOW Secure Print"
-DEFAULT_SERVER="http://127.0.0.1:8631/ipp"
+DEFAULT_SERVER="ipp://127.0.0.1:8631/ipp"
 PPD_PATH="/usr/share/cups/model/uniflow-ipp.ppd"
-CONFIG="${CONFIG_PATH:-/etc/uniflow-ipp/config.toml}"
 
 QUEUE_NAME="${1:-$DEFAULT_QUEUE}"
 QUEUE_DISPLAY="${2:-$DEFAULT_DISPLAY}"
+SERVER_URI="${3:-$DEFAULT_SERVER}"
 
 if [ "$(id -u)" != "0" ]; then
     echo "This script must be run as root."
@@ -24,15 +24,10 @@ echo "Installing PPD file..."
 mkdir -p /usr/share/cups/model
 cp /usr/share/uniflow-ipp/ppd/uniflow-ipp.ppd "$PPD_PATH"
 
-if lpstat -p "$QUEUE_NAME" 2>/dev/null | grep -q "$QUEUE_NAME"; then
-    echo "Queue '$QUEUE_NAME' already exists. Removing..."
-    lpadmin -x "$QUEUE_NAME"
-fi
-
 echo "Creating CUPS queue '$QUEUE_NAME'..."
 lpadmin -p "$QUEUE_NAME" \
     -E \
-    -v "$DEFAULT_SERVER" \
+    -v "$SERVER_URI" \
     -D "$QUEUE_DISPLAY" \
     -i "$PPD_PATH" \
     -o printer-is-shared=false
@@ -43,7 +38,7 @@ cupsaccept "$QUEUE_NAME"
 echo "CUPS queue '$QUEUE_NAME' created successfully."
 echo "  Queue name:    $QUEUE_NAME"
 echo "  Display name:  $QUEUE_DISPLAY"
-echo "  Device URI:    $DEFAULT_SERVER"
+echo "  Device URI:    $SERVER_URI"
 echo "  PPD:           $PPD_PATH"
 echo ""
 echo "You can now print to this queue using:"

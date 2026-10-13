@@ -1,6 +1,7 @@
 post_install() {
     echo ""
     echo "=== uniFLOW IPP Server Installation ==="
+    echo "Cloud upload is experimental; default mode only retains local PDFs."
     echo ""
     echo "1. Edit the configuration file:"
     echo "     /etc/uniflow-ipp/config.toml"
@@ -12,7 +13,7 @@ post_install() {
     echo "     /usr/share/uniflow-ipp/scripts/install-cups-queue.sh"
     echo ""
     echo "4. Print a test page:"
-    echo "     lp -d uniflow_secure /usr/share/cups/data/testprint"
+    echo "     lp -d uniflow_secure document.pdf"
     echo ""
 }
 
