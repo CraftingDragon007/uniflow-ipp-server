@@ -2,7 +2,10 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -36,7 +39,22 @@ type CUPSConfig struct {
 }
 
 type CloudConfig struct {
-	Enabled bool `toml:"enabled"`
+	Enabled           bool   `toml:"enabled"`
+	TenantDomain      string `toml:"tenant_domain"`
+	InstallerID       string `toml:"installer_id"`
+	SecureQueueName   string `toml:"secure_queue_name"`
+	OAuthClientID     string `toml:"oauth_client_id"`
+	OAuthClientSecret string `toml:"oauth_client_secret"`
+	OAuthScope        string `toml:"oauth_scope"`
+	DeviceEndpoint    string `toml:"device_endpoint"`
+	TokenEndpoint     string `toml:"token_endpoint"`
+	TokenPath         string `toml:"token_path"`
+	ManagementServer  string `toml:"management_server"`
+	UserID            string `toml:"user_id"`
+}
+
+func (c *CloudConfig) SubmissionURL() string {
+	return "https://" + c.ManagementServer + "/api/v1/smartclient/printjob/" + strings.ToLower(strings.ReplaceAll(c.UserID, "-", ""))
 }
 
 func Load(path string) (*Config, error) {
@@ -77,28 +95,66 @@ func defaultConfig() *Config {
 			ShareQueue:   false,
 		},
 		Cloud: CloudConfig{
-			Enabled: false,
+			Enabled:         false,
+			TokenPath:       "/var/lib/uniflow-ipp/token.json",
+			SecureQueueName: "MFD_STANDARD_CANON",
 		},
 	}
 }
 
 func (c *Config) PrinterURI() string {
-	parts := strings.Split(c.Server.Listen, ":")
-	host := "localhost"
-	port := "8631"
-	if len(parts) >= 1 {
-		host = parts[0]
-	}
-	if len(parts) >= 2 {
-		port = parts[1]
-	}
-	return fmt.Sprintf("ipp://%s:%s/ipp", host, port)
+	return "ipp://" + c.Server.Listen + "/ipp"
 }
 
 func (c *Config) Validate() error {
-	if c.Tenant.Domain != "" && c.Cloud.Enabled {
-		if c.Tenant.InstallerName == "" {
-			return fmt.Errorf("tenant.installer_name is required when cloud.enabled is true")
+	host, port, err := net.SplitHostPort(c.Server.Listen)
+	if err != nil {
+		return fmt.Errorf("server.listen must be host:port: %w", err)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("server.listen requires a port between 1 and 65535")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("server.listen must use a loopback IP; remote unauthenticated printing is not supported")
+	}
+	if c.Server.SpoolDir == "" {
+		return fmt.Errorf("server.spool_dir is required")
+	}
+	if c.Cloud.Enabled {
+		if c.Cloud.TenantDomain == "" && c.Tenant.Domain != "" {
+			c.Cloud.TenantDomain = c.Tenant.Domain
+		}
+		u, err := url.Parse("https://" + c.Cloud.ManagementServer)
+		if err != nil || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("cloud.management_server must be the registered management-server hostname")
+		}
+		id := strings.ReplaceAll(c.Cloud.UserID, "-", "")
+		if len(c.Cloud.UserID) != 32 {
+			if len(c.Cloud.UserID) != 36 || c.Cloud.UserID[8] != '-' || c.Cloud.UserID[13] != '-' || c.Cloud.UserID[18] != '-' || c.Cloud.UserID[23] != '-' {
+				return fmt.Errorf("cloud.user_id must be a canonical user UUID")
+			}
+		}
+		if len(id) != 32 || id == strings.Repeat("0", 32) {
+			return fmt.Errorf("cloud.user_id must be a nonzero user UUID")
+		}
+		for _, ch := range id {
+			if !strings.ContainsRune("0123456789abcdefABCDEF", ch) {
+				return fmt.Errorf("cloud.user_id must be a user UUID")
+			}
+		}
+		if c.Cloud.TokenPath == "" {
+			return fmt.Errorf("cloud.token_path is required")
+		}
+	}
+	for _, endpoint := range []string{c.Cloud.DeviceEndpoint, c.Cloud.TokenEndpoint} {
+		if endpoint == "" {
+			continue
+		}
+		u, err := url.Parse(endpoint)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("OAuth endpoints must be absolute HTTPS URLs")
 		}
 	}
 	return nil

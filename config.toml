@@ -16,4 +16,15 @@ ppd_path = "/usr/share/cups/model/uniflow-ipp.ppd"
 share_queue = false
 
 [cloud]
+# Experimental, credential-provisioned upload. Disabled means local capture only.
 enabled = false
+management_server = ""
+user_id = ""
+token_path = "/var/lib/uniflow-ipp/token.json"
+# Optional refresh credentials supplied by the tenant; no guessed identity provider.
+oauth_client_id = ""
+oauth_client_secret = ""
+oauth_scope = ""
+token_endpoint = ""
+# Optional RFC 8628 provider support, NOT native SmartClient registration.
+device_endpoint = ""

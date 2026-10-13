@@ -2,6 +2,7 @@
 *.swp
 *.swo
 .DS_Store
-uniflow-ipp-server
-/uniflow-ipp-server
 /pkg/
+/src/
+/*.tar.gz
+/*.pkg.tar.*

@@ -24,7 +24,7 @@
 *NickName: "uniFLOW Secure Print"
 *Throughput: 35
 *cupsSingleFile: True
-*cupsFilter2: "application/vnd.cups-pdf application/pdf 0 maxsize(6400000000) -"
+*cupsFilter2: "application/vnd.cups-pdf application/pdf 0 maxsize(100000000) -"
 *cupsFilter: "application/vnd.cups-pdf 0 -"
 *cupsMaxCopies: 9999
 *OpenUI *Collate: PickOne
