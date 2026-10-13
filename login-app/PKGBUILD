@@ -1,6 +1,6 @@
 pkgname=uniflow-login
 pkgver=1.0.0
-pkgrel=6
+pkgrel=7
 pkgdesc="Qt WebEngine tenant OAuth login and uniFLOW IPP server configuration"
 arch=('any')
 license=('MIT')
@@ -25,4 +25,5 @@ package() {
     python -m installer --destdir="$pkgdir" dist/*.whl
     install -Dm644 resources/uniflow-login.desktop "$pkgdir/usr/share/applications/uniflow-login.desktop"
     install -Dm644 README.md "$pkgdir/usr/share/doc/uniflow-login/README.md"
+    install -Dm644 ../LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

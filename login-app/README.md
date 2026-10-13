@@ -167,3 +167,7 @@ These use synthetic encrypted responses, a local verified-TLS OAuth fixture,
 and actual Qt WebEngine/WebChannel pages. The GUI test covers browser callback
 through authorization-code exchange and private config export. No live
 tenant credentials or documents are used.
+
+## License
+
+MIT. See the repository [LICENSE](../LICENSE).

@@ -1,7 +1,7 @@
 # Maintainer: uniFLOW IPP Server
 pkgname=uniflow-ipp-server
 pkgver=1.0.0
-pkgrel=6
+pkgrel=7
 pkgdesc="IPP server for uniFLOW CUPS integration"
 arch=('x86_64')
 url=""
@@ -35,6 +35,7 @@ package() {
 
     install -Dm644 config.toml "$pkgdir/etc/uniflow-ipp/config.toml"
     install -Dm644 README.md "$pkgdir/usr/share/doc/uniflow-ipp-server/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
     install -Dm644 ppd/uniflow-ipp.ppd "$pkgdir/usr/share/uniflow-ipp/ppd/uniflow-ipp.ppd"
 

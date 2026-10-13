@@ -139,3 +139,7 @@ cupstestppd -q ppd/uniflow-ipp.ppd
 
 The tests use local fixtures and do not authenticate against a live tenant or
 submit a cloud job. The login app has separate tests documented in its README.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
