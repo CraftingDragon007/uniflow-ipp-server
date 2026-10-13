@@ -1,0 +1,34 @@
+post_install() {
+    echo ""
+    echo "=== uniFLOW IPP Server Installation ==="
+    echo ""
+    echo "1. Edit the configuration file:"
+    echo "     /etc/uniflow-ipp/config.toml"
+    echo ""
+    echo "2. Enable and start the service:"
+    echo "     systemctl enable --now uniflow-ipp.service"
+    echo ""
+    echo "3. Create the CUPS queue:"
+    echo "     /usr/share/uniflow-ipp/scripts/install-cups-queue.sh"
+    echo ""
+    echo "4. Print a test page:"
+    echo "     lp -d uniflow_secure /usr/share/cups/data/testprint"
+    echo ""
+}
+
+post_upgrade() {
+    echo "Restarting uniflow-ipp service..."
+    if systemctl is-active --quiet uniflow-ipp.service 2>/dev/null; then
+        systemctl restart uniflow-ipp.service
+    fi
+}
+
+post_remove() {
+    echo ""
+    echo "To fully clean up, remove the CUPS queue:"
+    echo "  lpadmin -x uniflow_secure"
+    echo ""
+    echo "And remove the spool directory:"
+    echo "  rm -rf /var/spool/uniflow-ipp"
+    echo ""
+}

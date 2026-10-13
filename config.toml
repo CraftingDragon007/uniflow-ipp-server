@@ -1,0 +1,19 @@
+[server]
+listen = "127.0.0.1:8631"
+spool_dir = "/var/spool/uniflow-ipp"
+
+[tenant]
+domain = ""
+installer_name = "Linux IPP Client"
+product_name = "uniFLOW IPP Server"
+product_version = "1.0.0"
+
+[cups]
+queue_name = "uniflow_secure"
+queue_display = "uniFLOW Secure Print"
+use_ipp = true
+ppd_path = "/usr/share/cups/model/uniflow-ipp.ppd"
+share_queue = false
+
+[cloud]
+enabled = false

@@ -1,0 +1,7 @@
+/uniflow-ipp-server
+*.swp
+*.swo
+.DS_Store
+uniflow-ipp-server
+/uniflow-ipp-server
+/pkg/
