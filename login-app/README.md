@@ -113,8 +113,8 @@ is required by the tenant's supported-client check, not just an optional popup
 feature. It opens the tenant-supplied HTTPS URL using the desktop's default
 browser; HTTP, non-web URLs, embedded credentials and untrusted-page requests
 are rejected. Diagnostics distinguish a missing callback/bridge failure from
-a rejected registration response or failed token exchange; live completion
-is not yet established.
+a rejected registration response or failed token exchange. Live registration
+and export have been confirmed with one tenant.
 
 The shim and isolated transport are initialized at document creation and
 checked/reinstalled at document-ready time. This also covers the observed
@@ -146,13 +146,13 @@ followed. Private keys and browser credentials are not exported or logged.
 Token and config files contain secrets and are written as mode `0600` in a
 mode `0700` directory. Do not commit or share them.
 
-Initial login/configuration export is implemented; live tenant acceptance
-has not been established by offline tests. Embedded-browser policies at an
-identity provider may refuse login. The server's regular access-token refresh
-is supported, but peer credential renewal and continuous peer-registration
+Initial login/configuration export and a cloud upload through the server have
+been confirmed with one tenant. Embedded-browser policies at other identity
+providers may refuse login. The server's regular access-token refresh is
+supported, but peer credential renewal and continuous peer-registration
 heartbeats are not. The config records credential expiration in a comment;
-log in again when those credentials need renewing. A cloud upload still
-requires the tenant to accept this unofficial client.
+log in again when those credentials need renewing. Other tenants may reject
+this unofficial client.
 
 ## Tests
 

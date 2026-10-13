@@ -1,149 +1,135 @@
 # uniFLOW IPP Server for Linux
 
-An experimental local IPP endpoint for CUPS, targeting Arch Linux. This is
-not an official NT-ware client.
+An unofficial IPP server that connects a local CUPS queue to uniFLOW Online
+Secure Print. It accepts PDF print jobs on a loopback address and can upload
+them to the user's cloud queue. The project targets Arch Linux and includes a
+desktop [login app](login-app/README.md) for obtaining tenant credentials.
 
-**Default mode captures PDFs locally; it does not upload or physically print.**
-Cloud upload is opt-in and follows the secure PDF multipart path recovered
-from the macOS SmartClient. A separate [Qt WebEngine login app](login-app/README.md)
-can obtain tenant OAuth credentials and generate this server's configuration.
-A generated CUPS test PDF was accepted by one live tenant diagnostic upload
-after matching the native multipart framing. The user subsequently confirmed
-an end-to-end CUPS submission through the packaged systemd service appeared
-in the uniFLOW Online cloud queue. Physical printing was not tested.
+This is an experimental client, not an NT-ware product. Cloud submission has
+been verified with one tenant through the packaged systemd service; other
+tenants and printing at a physical device have not been tested. The package's
+default configuration **holds PDFs locally and does not upload them** until
+cloud access is configured.
 
-## Build and install on Arch Linux
+## Requirements
 
-Generate the local source archive from the current committed revision, then
-build the package; no nonexistent GitHub release is downloaded:
+- Arch Linux on x86-64 with CUPS, `makepkg`, and Go 1.22 or newer for the
+  packaged build.
+- Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/) to run the login
+  app from source. See its README for an alternative Python installation.
+- A uniFLOW Online account and a tenant-provided SmartClient
+  `.tenantcfg.plist` for cloud printing.
 
-```sh
-bash scripts/make-source.sh
-makepkg -si
-sudo systemctl enable --now uniflow-ipp.service
-sudo /usr/share/uniflow-ipp/scripts/install-cups-queue.sh
-lp -d uniflow_secure document.pdf
-```
+## Install and connect
 
-The service runs as `uniflow-ipp`. Configuration is in
-`/etc/uniflow-ipp/config.toml`, documents are in `/var/spool/uniflow-ipp`, and
-tokens are in `/var/lib/uniflow-ipp`. Documents and tokens are owner-readable
-only. The server accepts loopback IP addresses only, with a 100 MiB request
-limit. The queue installer updates existing queues without deleting them.
+1. Build and install the server package from a committed checkout:
 
-For a nondefault queue or port, edit the server configuration and pass matching
-values to the installer:
+   ```sh
+   bash scripts/make-source.sh
+   makepkg -si
+   ```
+
+   `make-source.sh` archives the current Git `HEAD`. Commit source changes
+   before packaging them. The package installs the service, sample config,
+   CUPS PPD, and queue installer; it does not enable cloud upload.
+
+2. Run the login app and select the tenant plist:
+
+   ```sh
+   uv run --project login-app uniflow-login --plist /path/to/.tenantcfg.plist
+   ```
+
+   Complete sign-in and MFA. If your tenant opens the system browser, keep
+   the login app open until registration finishes. Before clicking **Export
+   server configuration**, select **Export paths for the packaged system
+   service**. The app exports a private `config.toml` and `token.json` and
+   displays commands to install them. Run those commands; the app does not
+   make system changes itself.
+
+3. Start the service, create the CUPS queue, and print a test document:
+
+   ```sh
+   sudo systemctl enable --now uniflow-ipp.service
+   sudo /usr/share/uniflow-ipp/scripts/install-cups-queue.sh
+   lp -d uniflow_secure document.pdf
+   ```
+
+   Look for the job in your uniFLOW Online secure queue. A completed CUPS job
+   means the cloud accepted the upload; it does not mean a device printed it.
+
+For a different queue name or listener port, set the matching values in the
+server configuration and pass the same name and URI to the queue installer:
 
 ```sh
 sudo /usr/share/uniflow-ipp/scripts/install-cups-queue.sh \
     my_queue "My Secure Print" ipp://127.0.0.1:9631/ipp
 ```
 
-Run from source without installing a service:
+## Configuration and files
+
+The packaged service runs as the `uniflow-ipp` user with these paths:
+
+| Purpose | Path |
+| --- | --- |
+| Configuration | `/etc/uniflow-ipp/config.toml` |
+| OAuth token | `/var/lib/uniflow-ipp/token.json` |
+| PDF spool | `/var/spool/uniflow-ipp` |
+| IPP endpoint | `ipp://127.0.0.1:8631/ipp` |
+
+The login app's **system service** export uses these token and spool paths.
+Its default **current-user** export uses paths under the exported directory
+and will not work unchanged with the packaged service, which has home
+directory access blocked. The login app shows the required install commands:
+configuration is installed as `root:uniflow-ipp` with mode `0640`, and the
+token as `uniflow-ipp:uniflow-ipp` with mode `0600`. Both contain credentials;
+do not commit or share them.
+
+The sample config has `cloud.enabled = false`. In that mode, jobs are held as
+local PDFs only. The login app's export enables cloud submission and includes
+the management server, user ID, OAuth settings, and token path supplied by
+registration. The server refreshes access tokens and stores replacements
+privately. Peer credential renewal still requires signing in again before
+those credentials expire.
+
+After changing the installed config or token, restart the service:
 
 ```sh
-go run ./cmd/uniflow-ipp-server --config config.toml
+sudo systemctl restart uniflow-ipp.service
+sudo journalctl -u uniflow-ipp.service -n 50 --no-pager
 ```
 
-Set `server.spool_dir` to a writable directory first.
+The server accepts IPP connections only on a loopback IP address and limits
+requests to 100 MiB. Cloud upload uses HTTPS and the secure PDF submission
+flow. Copies, duplex, color, staple, punch, and media source settings are
+mapped from IPP job attributes where supported.
 
-## Experimental cloud upload
+## Job handling and current limits
 
-Use the companion GUI to log in from your tenant plist and export configuration:
+- A successful cloud response completes the IPP job and removes its local
+  spool PDF. A cleanup failure is logged but does not cause a second upload.
+- A failed cloud upload returns an IPP error and retains the PDF for
+  inspection. Local-only jobs also retain their PDFs. There is no automatic
+  cleanup for retained jobs.
+- The server does not retry uploads or follow upload redirects. CUPS may retry
+  failed submissions independently, so check the cloud queue and retained
+  spool files before resubmitting an uncertain job.
+- Job history and IPP IDs are in memory and reset on restart. Cancellation,
+  `Create-Job`/`Send-Document`, physical printer status, public print, and
+  zero-trust workflows are not implemented.
 
-```sh
-uv run --project login-app uniflow-login --plist /path/to/.tenantcfg.plist
-```
-
-It supports current-user and packaged-system-service exports. The following
-manual provisioning instructions remain available for existing credentials.
-
-The registered **management-server hostname**, **user UUID**, and a valid
-tenant-issued **Bearer token** must be provisioned through an authorized
-tenant workflow. The macOS client initializes the management server to the
-plist's tenant hostname; override that default only when required by the tenant.
-
-Set `cloud.management_server`, `cloud.user_id`, and `cloud.token_path`.
-Provision a token file owned by the service account with mode `0600`:
-
-```json
-{
-  "access_token": "<tenant-issued access token>",
-  "token_type": "Bearer",
-  "expires_at": "<actual expiry as an RFC3339 UTC timestamp>"
-}
-```
-
-Optional refresh support also needs `refresh_token` in that file and the
-tenant's actual `token_endpoint`, `oauth_client_id`, `oauth_client_secret`
-(if required), and `oauth_scope` in the configuration. Protect configuration
-files containing client secrets, including from other local users. Tokens
-with unknown expiration are refreshed or rejected, never reused indefinitely.
-Refresh responses are persisted atomically with mode `0600`.
-The tenant's OAuth refresh response may encode `expires_in` as a decimal
-string; the server accepts that form and persists it as a JSON number.
-For credential-provisioned SmartClient refreshes with a client secret,
-`token_type` is normalized to `Bearer` with a compatibility warning if absent
-or given a different string label. The native client ignores that label and
-always constructs a Bearer HTTP header. Malformed non-string metadata remains invalid.
-Provisioned token files must still explicitly specify `Bearer`.
-
-Only then set `cloud.enabled = true` and restart the service. Invalid
-configuration or unavailable credentials stop startup instead of silently
-falling back to local capture.
-
-The upload is a streamed POST to:
-
-```text
-https://<management-server>/api/v1/smartclient/printjob/<user-UUID-without-hyphens>
-```
-
-Parts are `metadata` (`{}`), `filecontent` (the original PDF), and `finishings`
-(JSON), in that order, with quoted multipart disposition parameters. The
-request also sends `Accept: application/json; charset=utf-8`. Copies, duplex,
-color, staple, punch, and media source are mapped from IPP attributes. The
-expected `X-ClientType: SmartClientForMac` header is retained as a compatibility
-choice. The live diagnostic accepted this request shape with HTTP 201, and a
-subsequent CUPS test page reached the cloud queue through the Go service.
-
-An optional `--authorize` command supports explicitly configured RFC 8628
-device providers. This is **not** the SmartClient's native registration flow;
-no Microsoft endpoint, client ID, or scope is guessed. Use it only when the
-tenant confirms such a flow issues a token for this API:
-
-```sh
-sudo -u uniflow-ipp uniflow-ipp-server \
-    --config /etc/uniflow-ipp/config.toml --authorize
-```
-
-The GUI implements `/Home/SmartClientRegistration`, a generated RSA key,
-the tenant's encrypted authorization response, and an OAuth authorization-code
-exchange. The management-server default is the plist's tenant hostname,
-matching the macOS client. Continuous peer-registration heartbeats and peer
-credential renewal remain unimplemented.
-
-## Job behavior and limitations
-
-Local-only jobs are reported as **held**, not printed. Uploaded jobs are
-reported as completed only after an HTTP success response; this means the
-cloud accepted the transfer, not that an MFD printed it. Failures return an
-IPP server error and retain the PDF, with an aborted state visible in job
-queries. Numeric cloud error codes are included in diagnostics when available;
-response descriptions are suppressed. There are no automatic upload retries or
-redirects, preventing silent resubmission or document forwarding to unexpected
-hosts.
-
-After a successful cloud upload, the server removes its local spool PDF. If
-that removal fails, it logs the error but still reports success to avoid a
-duplicate cloud submission. Local-only and failed jobs retain their PDFs;
-these files survive daemon restarts. Job history and IPP IDs are currently
-in-memory only. There is no automatic cleanup for retained jobs, retry queue,
-cancellation, Create-Job/Send-Document support, or physical-printer status
-tracking. Monitor spool disk usage. CUPS may retry failed submissions
-independently; inspect retained jobs before retrying an upload whose remote
-outcome is uncertain.
+The companion login app implements initial SmartClient registration. Ongoing
+peer-registration heartbeats and peer credential renewal are not implemented.
+See [login-app/README.md](login-app/README.md) for its setup and limitations.
 
 ## Development
+
+Run the server directly with an exported current-user config:
+
+```sh
+go run ./cmd/uniflow-ipp-server --config /path/to/export/config.toml
+```
+
+Run the Go checks:
 
 ```sh
 go test -race ./...
@@ -151,7 +137,5 @@ go vet ./...
 cupstestppd -q ppd/uniflow-ipp.ppd
 ```
 
-The tests exercise multipart framing and document bytes with a local HTTP
-server, token expiration/refresh/polling, private persistence, malformed IPP
-messages, finishing mappings, spool failures, and concurrent jobs. They do
-not authenticate against or submit documents to a live tenant.
+The tests use local fixtures and do not authenticate against a live tenant or
+submit a cloud job. The login app has separate tests documented in its README.
