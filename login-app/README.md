@@ -4,6 +4,8 @@ A separate PySide6/Qt WebEngine desktop application for logging in to the
 tenant specified by a SmartClient `.tenantcfg.plist` and generating the Linux
 IPP server's configuration. It does not run the server, create a CUPS queue,
 or change system configuration automatically.
+See [how to obtain the tenant plist](../TENANTCFG_PLIST.md) if you do not
+already have it.
 
 > **Disclaimer:** This independent project is not affiliated with, endorsed
 > by, or supported by NT-ware, the company behind uniFLOW. It is not an

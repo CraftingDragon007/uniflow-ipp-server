@@ -22,7 +22,7 @@ configured.
 - Python 3.11 or newer and [`uv`](https://docs.astral.sh/uv/) to run the login
   app from source. See its README for an alternative Python installation.
 - A uniFLOW Online account and a tenant-provided SmartClient
-  `.tenantcfg.plist` for cloud printing.
+  `.tenantcfg.plist` for cloud printing. See [how to obtain the plist](TENANTCFG_PLIST.md).
 
 ## Install and connect
 

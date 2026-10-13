@@ -2,6 +2,8 @@
 *.swp
 *.swo
 .DS_Store
+.tenantcfg.plist
+*.iso
 /pkg/
 /src/
 /*.tar.gz
