@@ -7,7 +7,9 @@ not an official NT-ware client.
 Cloud upload is opt-in and follows the secure PDF multipart path recovered
 from the macOS SmartClient. A separate [Qt WebEngine login app](login-app/README.md)
 can obtain tenant OAuth credentials and generate this server's configuration.
-Live tenant interoperability has not been verified.
+A generated CUPS test PDF was accepted by one live tenant diagnostic upload
+after matching the native multipart framing. An end-to-end CUPS submission
+through this packaged server is still awaiting verification.
 
 ## Build and install on Arch Linux
 
@@ -94,9 +96,12 @@ https://<management-server>/api/v1/smartclient/printjob/<user-UUID-without-hyphe
 ```
 
 Parts are `metadata` (`{}`), `filecontent` (the original PDF), and `finishings`
-(JSON). Copies, duplex, color, staple, punch, and media source are mapped from
-IPP attributes. The expected `X-ClientType: SmartClientForMac` header is
-retained as a compatibility choice, not proof of Linux support by the service.
+(JSON), in that order, with quoted multipart disposition parameters. The
+request also sends `Accept: application/json; charset=utf-8`. Copies, duplex,
+color, staple, punch, and media source are mapped from IPP attributes. The
+expected `X-ClientType: SmartClientForMac` header is retained as a compatibility
+choice. The live diagnostic accepted this request shape with HTTP 201, but it
+was sent by a separate diagnostic script, not by the packaged Go service.
 
 An optional `--authorize` command supports explicitly configured RFC 8628
 device providers. This is **not** the SmartClient's native registration flow;
@@ -120,8 +125,10 @@ Local-only jobs are reported as **held**, not printed. Uploaded jobs are
 reported as completed only after an HTTP success response; this means the
 cloud accepted the transfer, not that an MFD printed it. Failures return an
 IPP server error and retain the PDF, with an aborted state visible in job
-queries. There are no automatic upload retries or redirects, preventing
-silent resubmission or document forwarding to unexpected hosts.
+queries. Numeric cloud error codes are included in diagnostics when available;
+response descriptions are suppressed. There are no automatic upload retries or
+redirects, preventing silent resubmission or document forwarding to unexpected
+hosts.
 
 Spool PDFs survive daemon restarts; job history and IPP IDs are currently
 in-memory only. There is no automatic cleanup, retry queue, cancellation,
