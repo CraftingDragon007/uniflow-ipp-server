@@ -187,6 +187,7 @@ func (m *TokenManager) postForm(ctx context.Context, endpoint string, form url.V
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-ClientType", "SmartClientForMac")
 	resp, err := m.cfg.HTTPClient.Do(req)
 	if err != nil {
 		return err

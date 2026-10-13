@@ -29,6 +29,9 @@ func TestAccessTokenLifecycle(t *testing.T) {
 	var requests atomic.Int32
 	m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		if r.Header.Get("X-ClientType") != "SmartClientForMac" {
+			t.Error("missing native token-exchange client header")
+		}
 		if err := r.ParseForm(); err != nil {
 			t.Error(err)
 		}

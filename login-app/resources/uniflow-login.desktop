@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=uniFLOW Login
+Comment=Sign in to your tenant and export IPP server configuration
+Exec=uniflow-login
+Icon=dialog-password
+Terminal=false
+Categories=Utility;

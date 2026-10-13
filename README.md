@@ -5,8 +5,9 @@ not an official NT-ware client.
 
 **Default mode captures PDFs locally; it does not upload or physically print.**
 Cloud upload is opt-in and follows the secure PDF multipart path recovered
-from the macOS SmartClient. Automated uniFLOW peer registration is not
-implemented, and live tenant interoperability has not been verified.
+from the macOS SmartClient. A separate [Qt WebEngine login app](login-app/README.md)
+can obtain tenant OAuth credentials and generate this server's configuration.
+Live tenant interoperability has not been verified.
 
 ## Build and install on Arch Linux
 
@@ -45,10 +46,19 @@ Set `server.spool_dir` to a writable directory first.
 
 ## Experimental cloud upload
 
+Use the companion GUI to log in from your tenant plist and export configuration:
+
+```sh
+uv run --project login-app uniflow-login --plist /path/to/.tenantcfg.plist
+```
+
+It supports current-user and packaged-system-service exports. The following
+manual provisioning instructions remain available for existing credentials.
+
 The registered **management-server hostname**, **user UUID**, and a valid
 tenant-issued **Bearer token** must be provisioned through an authorized
-tenant workflow. Do not substitute the tenant website for the management
-server without establishing that they are the same.
+tenant workflow. The macOS client initializes the management server to the
+plist's tenant hostname; override that default only when required by the tenant.
 
 Set `cloud.management_server`, `cloud.user_id`, and `cloud.token_path`.
 Provision a token file owned by the service account with mode `0600`:
@@ -93,10 +103,11 @@ sudo -u uniflow-ipp uniflow-ipp-server \
     --config /etc/uniflow-ipp/config.toml --authorize
 ```
 
-Native registration uses `/Home/SmartClientRegistration`, generated RSA
-parameters, and an encrypted authorization response carrying peer credentials.
-Reconstructing that onboarding and management-server discovery remains
-necessary for a self-registering Linux replacement.
+The GUI implements `/Home/SmartClientRegistration`, a generated RSA key,
+the tenant's encrypted authorization response, and an OAuth authorization-code
+exchange. The management-server default is the plist's tenant hostname,
+matching the macOS client. Continuous peer-registration heartbeats and peer
+credential renewal remain unimplemented.
 
 ## Job behavior and limitations
 

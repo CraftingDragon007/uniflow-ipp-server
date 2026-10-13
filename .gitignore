@@ -6,3 +6,13 @@
 /src/
 /*.tar.gz
 /*.pkg.tar.*
+**/.venv/
+**/__pycache__/
+**/*.egg-info/
+**/build/
+**/dist/
+login-app/src/uniflow-ipp-server-*
+login-app/pkg/
+login-app/*.tar.gz
+login-app/*.pkg.tar.*
+**/uniflow-config-*/

@@ -1,0 +1,28 @@
+pkgname=uniflow-login
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Qt WebEngine tenant OAuth login and uniFLOW IPP server configuration"
+arch=('any')
+license=('MIT')
+depends=('python>=3.11' 'pyside6' 'qt6-webengine' 'python-cryptography')
+makedepends=('python-build' 'python-installer' 'python-setuptools')
+optdepends=('uniflow-ipp-server: use the generated server configuration')
+source=("uniflow-ipp-server-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/uniflow-ipp-server-$pkgver/login-app"
+    python -m build --wheel --no-isolation
+}
+
+check() {
+    cd "$srcdir/uniflow-ipp-server-$pkgver/login-app"
+    PYTHONPATH=src python -m unittest discover -s tests -p test_protocol.py
+}
+
+package() {
+    cd "$srcdir/uniflow-ipp-server-$pkgver/login-app"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+    install -Dm644 resources/uniflow-login.desktop "$pkgdir/usr/share/applications/uniflow-login.desktop"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/uniflow-login/README.md"
+}
