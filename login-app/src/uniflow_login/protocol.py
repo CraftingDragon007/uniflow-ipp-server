@@ -56,7 +56,7 @@ def hostname(value: str) -> str:
     return host
 
 
-def https_endpoint(value: str) -> str:
+def https_endpoint(value: str, *, allow_fragment: bool = False) -> str:
     if not isinstance(value, str) or len(value) > 8192 or any(ch.isspace() for ch in value):
         raise LoginError("The tenant returned an invalid HTTPS endpoint.")
     try:
@@ -64,8 +64,8 @@ def https_endpoint(value: str) -> str:
         port = parsed.port
     except ValueError as exc:
         raise LoginError("The tenant returned an invalid HTTPS endpoint.") from exc
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username is not None or parsed.fragment:
-        raise LoginError("OAuth endpoints must use HTTPS without embedded credentials or fragments.")
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username is not None or (parsed.fragment and not allow_fragment):
+        raise LoginError("A valid HTTPS URL without embedded credentials or unsupported fragments is required.")
     hostname(parsed.hostname)
     if port is not None and not 1 <= port <= 65535:
         raise LoginError("The tenant returned an invalid HTTPS port.")

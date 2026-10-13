@@ -138,6 +138,7 @@ class ProtocolTests(unittest.TestCase):
         for changes in (
             {"UserId": str(uuid.UUID(int=0))}, {"UserId": "not-a-uuid"},
             {"TokenUri": "http://oauth.example.invalid/token"},
+            {"TokenUri": "https://oauth.example.invalid/token#unsupported"},
             {"TokenUri": "https://localhost/token"}, {"RedirectUri": "relative"},
             {"RedirectUri": "https://["}, {"Code": ""},
             {"Key": "not base64"}, {"Data": "not base64"},

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QThread, QTimer, Qt, QUrl, Signal, qVersion
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -189,7 +190,7 @@ class LoginWindow(QMainWindow):
         if isValid(old_page):
             old_page.deleteLater()
         self.cancel_button.setEnabled(True)
-        self.status.setText("Sign in and complete any MFA inside the browser. TLS certificate verification is enabled.")
+        self.status.setText("Sign in and complete MFA. The tenant may open your system browser; keep this window open.")
         self.browser.load(QUrl(self.session.registration_url()))
         self.diagnostic_timer.start()
 
@@ -220,6 +221,7 @@ class LoginWindow(QMainWindow):
         ):
             settings.setAttribute(option, False)
         page.bridge.authentication.connect(lambda data: self.authenticate(data) if self.session is session else None)
+        page.bridge.external_browser.connect(lambda url: self.open_system_browser(url) if self.session is session else None)
         page.bridge.failure.connect(
             lambda: self.status.setText("Tenant registration failed. Restart login and try again.")
             if self.session is session else None
@@ -230,6 +232,19 @@ class LoginWindow(QMainWindow):
             if not success and self.session is session and self.result is None else None
         )
         return page
+
+    def open_system_browser(self, url: str):
+        if self.session is None or self.callback_consumed or self.closing:
+            logger.warning("External-browser handoff ignored: login session is not awaiting authentication")
+            return
+        if not QDesktopServices.openUrl(QUrl(url)):
+            self.show_error("Could not open the system browser. Configure a default HTTPS browser, then retry login.")
+            return
+        logger.info("System-browser handoff accepted; keeping the tenant page and registration session active")
+        self.status.setText(
+            "Complete login/MFA in your system browser. Keep this window open; "
+            "the tenant page will deliver the registration result here."
+        )
 
     def make_popup(self):
         if self.session is None or self.profile is None:

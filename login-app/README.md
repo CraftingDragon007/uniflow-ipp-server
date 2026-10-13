@@ -19,7 +19,11 @@ required. `uv.lock` records the tested dependencies.
 
 The plist can be XML or binary, with native booleans or the string booleans
 used by the macOS installer. Open the plist, click **Log in**, and complete the
-tenant's login/MFA in the embedded browser. The app receives tenant-issued
+tenant's login/MFA. The tenant can request your default system browser for
+identity providers that require it; **keep the login app open** during that
+handoff. Its embedded tenant page stays active to receive the registration
+result. If desktop browser launching fails, the app reports an error rather
+than pretending the handoff succeeded. The app receives tenant-issued
 peer credentials and exchanges the authorization code for OAuth tokens.
 OAuth endpoints, scope and client credentials come from that response, not
 from guessed Microsoft device-flow defaults.
@@ -97,19 +101,31 @@ identifiers are retained. Uncaught Python errors report their class and
 function/line stack, not potentially secret exception text. Logs still include
 tenant/identity-provider hostnames; review them before sharing.
 
-The macOS identity adjustment addresses a confirmed contract mismatch, but
-the live post-MFA spinner was still reported afterward. The diagnostics are
-intended to distinguish a missing callback/bridge failure from a rejected
-registration response or failed token exchange; live completion is not yet
-established.
+For a Mac tenant page, `externalBrowserHandler` should be `True`. This handler
+is required by the tenant's supported-client check, not just an optional popup
+feature. It opens the tenant-supplied HTTPS URL using the desktop's default
+browser; HTTP, non-web URLs, embedded credentials and untrusted-page requests
+are rejected. Diagnostics distinguish a missing callback/bridge failure from
+a rejected registration response or failed token exchange; live completion
+is not yet established.
+
+The shim and isolated transport are initialized at document creation and
+checked/reinstalled at document-ready time. This also covers the observed
+registration page where handler availability disappeared after navigation.
+`shimInstalled` distinguishes a missing injection from unavailable handlers;
+duplicate transport initialization is suppressed to avoid duplicate callbacks.
 
 ## Privacy and compatibility
 
 The browser profile is off-the-record: cookies and cache stay in memory.
+This applies to the embedded Qt browser only. The external system browser uses
+its own normal profile, cookies and history; the app does not read or clear it.
 Every login uses a newly generated RSA key. The JavaScript compatibility
 bridge is injected only into the tenant's main frame. Its native transport
 lives in an isolated Qt script world, with source/origin checks; federated
 identity-provider pages and their frames cannot submit registration data.
+The tenant-only bridge also implements `smartClientMacOpenInSystemBrowser`,
+matching the shipped client's actual system-browser handoff.
 The profile advertises a macOS platform to select the tenant's
 `SmartClientForMac` callback contract, retaining the actual Qt/Chromium browser
 versions. With the default Linux identity the tenant selects Windows callbacks,

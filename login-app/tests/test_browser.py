@@ -47,8 +47,10 @@ class BrowserTests(unittest.TestCase):
         self.view.setPage(self.page)
         self.received = []
         self.failures = []
+        self.external_urls = []
         self.page.bridge.authentication.connect(self.received.append)
         self.page.bridge.failure.connect(lambda: self.failures.append(True))
+        self.page.bridge.external_browser.connect(self.external_urls.append)
         self.view.show()
 
     def tearDown(self):
@@ -76,6 +78,23 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.received, ["test-authentication"])
         self.page.runJavaScript("window.webkit.messageHandlers.smartClientMacRegistrationFailed.postMessage('unused');")
         self.assertTrue(wait_for(lambda: self.failures))
+
+    def test_registration_document_initialization_cannot_remove_bridge(self):
+        self.load_html("""<html><script>
+window.webkit = {};
+function SmartClientOnRegistrationSuccess() {}
+function SmartClientOnRegistrationError() {}
+</script><body>Registration page</body></html>""")
+        self.page.runJavaScript(
+            "window.webkit.messageHandlers.smartClientMacAuthenticationData.postMessage('registration-after-reset');"
+        )
+        self.assertTrue(wait_for(lambda: self.received))
+        QTest.qWait(100)
+        self.assertEqual(self.received, ["registration-after-reset"])
+        with self.assertLogs(LOGGER_NAME, level="INFO") as captured:
+            self.page.log_diagnostics()
+            self.assertTrue(wait_for(lambda: any("'authenticationHandler': True" in line for line in captured.output)))
+        self.assertIn("'externalBrowserHandler': True", "\n".join(captured.output))
 
     def test_other_origins_and_frames_cannot_submit(self):
         self.load_html("<html><body>Identity provider</body></html>", "https://identity.example.invalid/login")
@@ -115,6 +134,48 @@ document.body.appendChild(frame);
     def test_bridge_diagnostics_do_not_accept_arbitrary_text(self):
         with self.assertNoLogs(LOGGER_NAME):
             self.page.bridge.diagnostic("private-secret")
+
+    def test_external_browser_capability_and_handoff(self):
+        self.load_html("""<html><script>
+window.PageConfig = {ClientType: "SmartClientForMac"};
+window.unsupportedClient = !window.webkit || !window.webkit.messageHandlers ||
+    !window.webkit.messageHandlers.smartClientMacOpenInSystemBrowser;
+</script></html>""")
+        values = []
+        self.page.runJavaScript("window.unsupportedClient", values.append)
+        self.assertTrue(wait_for(lambda: values))
+        self.assertEqual(values, [False])
+        url = "https://identity.example.invalid/login?code=private-handoff#private-fragment"
+        with self.assertLogs(LOGGER_NAME, level="INFO") as captured:
+            self.page.runJavaScript(
+                f"window.webkit.messageHandlers.smartClientMacOpenInSystemBrowser.postMessage({json.dumps(url)});"
+            )
+            self.assertTrue(wait_for(lambda: self.external_urls))
+            self.page.log_diagnostics()
+            self.assertTrue(wait_for(lambda: any("'externalBrowserHandler': True" in line for line in captured.output)))
+        self.assertEqual(self.external_urls, [url])
+        self.assertNotIn("private-handoff", "\n".join(captured.output))
+        self.assertNotIn("private-fragment", "\n".join(captured.output))
+
+    def test_external_browser_rejects_invalid_urls_origins_and_frames(self):
+        self.load_html("<html>Tenant</html>")
+        for url in (
+            "http://identity.example.invalid/login", "file:///etc/passwd",
+            "javascript:alert(1)", "https://user:secret@identity.example.invalid/",
+            "https://localhost/login", "https://identity.example.invalid:bad/",
+        ):
+            self.page.bridge.openInSystemBrowser(url)
+        self.page.runJavaScript("""
+const frame = document.createElement("iframe");
+frame.sandbox = "allow-scripts";
+frame.srcdoc = '<script>window.parent.postMessage({uniflowRegistration:true,kind:"external-browser",data:"https://identity.example.invalid/login"}, "*");<\\/script>';
+document.body.appendChild(frame);
+""")
+        QTest.qWait(300)
+        self.assertEqual(self.external_urls, [])
+        self.load_html("<html>Provider</html>", "https://identity.example.invalid/login")
+        self.page.bridge.openInSystemBrowser("https://identity.example.invalid/login")
+        self.assertEqual(self.external_urls, [])
 
 
 class GuiFlowTests(unittest.TestCase):
@@ -156,10 +217,12 @@ class GuiFlowTests(unittest.TestCase):
             loaded = []
             page.loadFinished.connect(loaded.append)
             page.setHtml("""<html><script>
+window.webkit = {};
 function SmartClientOnRegistrationSuccess(){window.fixtureSuccess=true}
 function deliverRegistration(data) {
     // The tenant chooses its native client contract from the browser identity.
-    if (navigator.userAgent.includes("Macintosh")) {
+    if (navigator.userAgent.includes("Macintosh") &&
+        window.webkit.messageHandlers.smartClientMacOpenInSystemBrowser) {
         window.webkit.messageHandlers.smartClientMacAuthenticationData.postMessage(data);
     } else {
         window.external.SmartClientAuthenticationData(data);
@@ -167,6 +230,18 @@ function deliverRegistration(data) {
 }
 </script></html>""", QUrl("https://tenant.example.invalid/Home/SmartClientRegistration"))
             self.assertTrue(wait_for(lambda: loaded and loaded[-1]))
+            url = "https://identity.example.invalid/login?private-handoff"
+            session = window.session
+            with patch("uniflow_login.app.QDesktopServices.openUrl", return_value=True) as opened:
+                page.runJavaScript(
+                    f"window.webkit.messageHandlers.smartClientMacOpenInSystemBrowser.postMessage({json.dumps(url)});"
+                )
+                self.assertTrue(wait_for(lambda: opened.called))
+                self.assertEqual(opened.call_args.args[0].toString(), url)
+            self.assertIs(window.session, session)
+            self.assertTrue(window.diagnostic_timer.isActive())
+            self.assertFalse(window.callback_consumed)
+            self.assertIn("system browser", window.status.text())
             message = authorization_message(window.session)
             client = OAuthClient()
             response = Response(json.dumps({
@@ -182,6 +257,7 @@ function deliverRegistration(data) {
             self.assertIn("Registration response decrypted and validated", window.logs.toPlainText())
             for secret in ("test-qt-access", "test-qt-refresh", window.result.credentials.client_secret, message):
                 self.assertNotIn(secret, window.logs.toPlainText())
+            self.assertNotIn("private-handoff", window.logs.toPlainText())
             with tempfile.TemporaryDirectory() as temp, patch("uniflow_login.app.QFileDialog.getExistingDirectory", return_value=temp):
                 window.export_config()
                 bundles = list(Path(temp).iterdir())
@@ -198,6 +274,23 @@ function deliverRegistration(data) {
             window.close()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             logger.setLevel(old_level)
+
+    def test_system_browser_launch_failure_is_visible(self):
+        window = LoginWindow()
+        window.tenant = tenant()
+        window.session = RegistrationSession(window.tenant)
+        try:
+            with patch("uniflow_login.app.QDesktopServices.openUrl", return_value=False), patch.object(window, "show_error") as error:
+                window.open_system_browser("https://identity.example.invalid/login")
+                error.assert_called_once()
+                self.assertIn("Could not open the system browser", error.call_args.args[0])
+            window.session = None
+            with patch("uniflow_login.app.QDesktopServices.openUrl") as opened:
+                window.open_system_browser("https://identity.example.invalid/login")
+                opened.assert_not_called()
+        finally:
+            window.close()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 if __name__ == "__main__":

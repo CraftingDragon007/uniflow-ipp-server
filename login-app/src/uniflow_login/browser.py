@@ -7,7 +7,7 @@ from PySide6.QtCore import QFile, QIODevice, QObject, Signal, Slot
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineScript, QWebEngineUrlRequestInterceptor
 
-from .protocol import LoginError
+from .protocol import LoginError, https_endpoint
 from .diagnostics import console_summary, safe_origin
 
 
@@ -24,6 +24,7 @@ class RequestLogger(QWebEngineUrlRequestInterceptor):
 
 class RegistrationBridge(QObject):
     authentication = Signal(str)
+    external_browser = Signal(str)
     failure = Signal()
     notice = Signal(str)
 
@@ -57,6 +58,21 @@ class RegistrationBridge(QObject):
             logger.warning("Registration-failed callback blocked: untrusted page")
 
     @Slot(str)
+    def openInSystemBrowser(self, url: str):
+        if not self.trusted_page():
+            logger.warning("External-browser handoff blocked: untrusted page")
+            self.notice.emit("External-browser handoff blocked: it did not originate from the tenant page.")
+            return
+        try:
+            https_endpoint(url, allow_fragment=True)
+        except LoginError:
+            logger.warning("External-browser handoff blocked: invalid HTTPS URL")
+            self.notice.emit("External-browser handoff blocked: the tenant must supply a valid HTTPS URL.")
+            return
+        logger.info("Tenant requested system-browser login origin=%s (URL contents suppressed)", safe_origin(url))
+        self.external_browser.emit(url)
+
+    @Slot(str)
     def diagnostic(self, event: str):
         if event in ("shim-ready", "transport-ready", "invalid-callback-type", "callback-queue-full"):
             logger.log(
@@ -86,6 +102,7 @@ class RegistrationPage(QWebEnginePage):
 (() => {
     const origin = ORIGIN;
     if (window !== window.top || location.origin !== origin) return;
+    window.__uniflowShimInstalled = true;
     const send = (kind, data = "") => {
         if (typeof data !== "string") {
             window.postMessage({uniflowRegistration:true, kind:"diagnostic", data:"invalid-callback-type"}, origin);
@@ -101,6 +118,9 @@ class RegistrationPage(QWebEnginePage):
     window.webkit.messageHandlers.smartClientMacRegistrationFailed = {
         postMessage: () => send("failure")
     };
+    window.webkit.messageHandlers.smartClientMacOpenInSystemBrowser = {
+        postMessage: url => send("external-browser", url)
+    };
     send("diagnostic", "shim-ready");
 })();
 """.replace("ORIGIN", origin)
@@ -108,12 +128,15 @@ class RegistrationPage(QWebEnginePage):
 (() => {
     const origin = ORIGIN;
     if (window !== window.top || location.origin !== origin) return;
+    if (window.__uniflowTransportInstalled) return;
+    window.__uniflowTransportInstalled = true;
     let bridge = null;
     let queueFull = false;
     const pending = [];
     const dispatch = data => {
         if (data.kind === "authentication") bridge.authenticate(data.data);
         else if (data.kind === "failure") bridge.registrationFailed();
+        else if (data.kind === "external-browser") bridge.openInSystemBrowser(data.data);
         else if (data.kind === "diagnostic") bridge.diagnostic(data.data);
     };
     window.addEventListener("message", event => {
@@ -137,13 +160,17 @@ class RegistrationPage(QWebEnginePage):
             ("uniFLOW tenant bridge", main_script, QWebEngineScript.ScriptWorldId.MainWorld),
             ("uniFLOW isolated transport", isolated_script, QWebEngineScript.ScriptWorldId.ApplicationWorld),
         ):
-            script = QWebEngineScript()
-            script.setName(name)
-            script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
-            script.setWorldId(world.value)
-            script.setRunsOnSubFrames(False)
-            script.setSourceCode(script_source)
-            self.scripts().insert(script)
+            for injection in (
+                QWebEngineScript.InjectionPoint.DocumentCreation,
+                QWebEngineScript.InjectionPoint.DocumentReady,
+            ):
+                script = QWebEngineScript()
+                script.setName(f"{name} ({injection.name})")
+                script.setInjectionPoint(injection)
+                script.setWorldId(world.value)
+                script.setRunsOnSubFrames(False)
+                script.setSourceCode(script_source)
+                self.scripts().insert(script)
         self.certificateError.connect(self._certificate_error)
         self.permissionRequested.connect(lambda permission: permission.deny())
         self.windowCloseRequested.connect(lambda: self.parent().close() if self.parent() else None)
@@ -176,7 +203,8 @@ class RegistrationPage(QWebEnginePage):
         failureHandler: !!(handlers && handlers.smartClientMacRegistrationFailed),
         externalBrowserHandler: !!(handlers && handlers.smartClientMacOpenInSystemBrowser),
         successFunction: typeof SmartClientOnRegistrationSuccess === "function",
-        errorFunction: typeof SmartClientOnRegistrationError === "function"
+        errorFunction: typeof SmartClientOnRegistrationError === "function",
+        shimInstalled: window.__uniflowShimInstalled === true
     });
 })();
 """, self._diagnostics_received)
@@ -197,7 +225,7 @@ class RegistrationPage(QWebEnginePage):
         if client_type not in ("SmartClientForMac", "SmartClientForWindows", "LocalServerAgent"):
             client_type = "unknown"
         flags = {key: result.get(key) is True for key in (
-            "authenticationHandler", "failureHandler", "externalBrowserHandler", "successFunction", "errorFunction",
+            "authenticationHandler", "failureHandler", "externalBrowserHandler", "successFunction", "errorFunction", "shimInstalled",
         )}
         logger.info("Tenant page client_type=%s bridge_flags=%s", client_type, flags)
 
