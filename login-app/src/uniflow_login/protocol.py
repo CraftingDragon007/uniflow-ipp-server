@@ -296,10 +296,14 @@ class OAuthClient:
         if token_type is None or token_type == "":
             state = "missing" if "token_type" not in token else ("null" if token_type is None else "empty")
             logger.warning("OAuth token_type is %s; using the native SmartClient's implicit Bearer contract", state)
-        elif not isinstance(token_type, str) or token_type.lower() != "bearer":
-            state = "unsupported-string" if isinstance(token_type, str) else "invalid-type"
-            logger.error("OAuth token_type rejected: state=%s (value suppressed)", state)
-            raise LoginError("OAuth token response specifies an unsupported token_type; expected Bearer.")
+        elif not isinstance(token_type, str):
+            logger.error("OAuth token_type rejected: state=invalid-type (value suppressed)")
+            raise LoginError("OAuth token response has a malformed token_type; expected text or null.")
+        elif token_type.lower() != "bearer":
+            logger.warning(
+                "Native token_type is a non-Bearer string; ignoring the label and using the "
+                "SmartClient's fixed Bearer authorization scheme (value suppressed)"
+            )
         lifetime = token.get("expires_in")
         if isinstance(lifetime, str) and lifetime.isdecimal():
             lifetime = int(lifetime)

@@ -77,9 +77,10 @@ tenant's actual `token_endpoint`, `oauth_client_id`, `oauth_client_secret`
 files containing client secrets, including from other local users. Tokens
 with unknown expiration are refreshed or rejected, never reused indefinitely.
 Refresh responses are persisted atomically with mode `0600`.
-For credential-provisioned SmartClient refreshes with a client secret, a
-missing/empty `token_type` is normalized to `Bearer` with a compatibility
-warning, matching the native client. Explicit unsupported types remain invalid.
+For credential-provisioned SmartClient refreshes with a client secret,
+`token_type` is normalized to `Bearer` with a compatibility warning if absent
+or given a different string label. The native client ignores that label and
+always constructs a Bearer HTTP header. Malformed non-string metadata remains invalid.
 Provisioned token files must still explicitly specify `Bearer`.
 
 Only then set `cloud.enabled = true` and restart the service. Invalid

@@ -1,7 +1,7 @@
 # Maintainer: uniFLOW IPP Server
 pkgname=uniflow-ipp-server
 pkgver=1.0.0
-pkgrel=2
+pkgrel=3
 pkgdesc="IPP server for uniFLOW CUPS integration"
 arch=('x86_64')
 url=""

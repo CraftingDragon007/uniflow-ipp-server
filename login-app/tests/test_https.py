@@ -109,6 +109,12 @@ class HttpsTests(unittest.TestCase):
         self.assertEqual(got.token["token_type"], "Bearer")
         self.assertEqual(got.token["access_token"], "test-https")
 
+    def test_native_response_with_non_bearer_label(self):
+        self.token["token_type"] = "JWT"
+        got = OAuthClient(self.context).exchange(replace(credentials(), token_uri=self.endpoint))
+        self.assertEqual(got.token["token_type"], "Bearer")
+        self.assertEqual(got.token["access_token"], "test-https")
+
     def test_redirect_does_not_forward_credentials(self):
         self.status = 302
         with self.assertRaisesRegex(LoginError, "HTTP 302"):

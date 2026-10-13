@@ -150,8 +150,8 @@ func (m *TokenManager) AccessToken(ctx context.Context) (string, error) {
 	if err := m.postForm(ctx, m.cfg.TokenEndpoint, form, &tr); err != nil {
 		return "", fmt.Errorf("token refresh: %w", err)
 	}
-	if tr.TokenType == "" && m.cfg.ClientSecret != "" {
-		log.Print("SmartClient token refresh omitted token_type; using its implicit Bearer contract")
+	if !strings.EqualFold(tr.TokenType, "Bearer") && m.cfg.ClientSecret != "" {
+		log.Print("SmartClient token refresh token_type normalized to its fixed Bearer authorization scheme (value suppressed)")
 		tr.TokenType = "Bearer"
 	}
 	if tr.RefreshToken == "" {

@@ -110,7 +110,7 @@ func TestTokenFailures(t *testing.T) {
 }
 
 func TestNativeRefreshWithImplicitBearer(t *testing.T) {
-	for _, typeField := range []string{"", `,"token_type":""`, `,"token_type":null`} {
+	for _, typeField := range []string{"", `,"token_type":""`, `,"token_type":null`, `,"token_type":"JWT"`, `,"token_type":"Basic"`} {
 		t.Run(typeField, func(t *testing.T) {
 			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(`{"access_token":"test-native","expires_in":3600` + typeField + `}`))
@@ -132,8 +132,8 @@ func TestNativeRefreshWithImplicitBearer(t *testing.T) {
 	}
 }
 
-func TestNativeRefreshRejectsExplicitUnsupportedType(t *testing.T) {
-	for _, typeField := range []string{`"Basic"`, `42`, `true`} {
+func TestNativeRefreshRejectsMalformedType(t *testing.T) {
+	for _, typeField := range []string{`42`, `true`, `{}`} {
 		t.Run(typeField, func(t *testing.T) {
 			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte(`{"access_token":"test-native","expires_in":3600,"token_type":` + typeField + `}`))

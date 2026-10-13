@@ -246,7 +246,7 @@ function deliverRegistration(data) {
             client = OAuthClient()
             response = Response(json.dumps({
                 "access_token": "test-qt-access", "refresh_token": "test-qt-refresh",
-                "expires_in": 3600,
+                "token_type": "private-native-token-label", "expires_in": 3600,
             }).encode())
             with patch("uniflow_login.app.OAuthClient", return_value=client), patch.object(client.opener, "open", return_value=response):
                 page.runJavaScript(f"deliverRegistration({json.dumps(message)});")
@@ -255,9 +255,10 @@ function deliverRegistration(data) {
             self.assertEqual(window.result.token["access_token"], "test-qt-access")
             self.assertTrue(wait_for(lambda: "OAuth login succeeded" in window.logs.toPlainText()))
             self.assertIn("Registration response decrypted and validated", window.logs.toPlainText())
-            for secret in ("test-qt-access", "test-qt-refresh", window.result.credentials.client_secret, message):
+            for secret in ("test-qt-access", "test-qt-refresh", "private-native-token-label", window.result.credentials.client_secret, message):
                 self.assertNotIn(secret, window.logs.toPlainText())
             self.assertNotIn("private-handoff", window.logs.toPlainText())
+            self.assertEqual(window.result.token["token_type"], "Bearer")
             with tempfile.TemporaryDirectory() as temp, patch("uniflow_login.app.QFileDialog.getExistingDirectory", return_value=temp):
                 window.export_config()
                 bundles = list(Path(temp).iterdir())
