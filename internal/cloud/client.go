@@ -130,9 +130,6 @@ func (c *Client) Submit(ctx context.Context, job Job) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return submissionError(resp)
 	}
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return fmt.Errorf("read submission response: %w", err)
-	}
 	return nil
 }
 

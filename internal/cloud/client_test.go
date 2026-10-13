@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,15 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	t.handler.ServeHTTP(w, r)
 	return w.Result(), nil
 }
+
+type responseTransport func(*http.Request) (*http.Response, error)
+
+func (t responseTransport) RoundTrip(r *http.Request) (*http.Response, error) { return t(r) }
+
+type unreadableBody struct{}
+
+func (unreadableBody) Read([]byte) (int, error) { return 0, errors.New("unreadable response body") }
+func (unreadableBody) Close() error             { return nil }
 
 func TestSubmissionWireFormat(t *testing.T) {
 	pdf := bytes.Repeat([]byte("%PDF-test\n"), 2048)
@@ -141,6 +151,20 @@ func TestSubmissionFailures(t *testing.T) {
 	client := NewClient("http://unused.invalid", fixedToken{err: fmt.Errorf("no token")})
 	if err := client.Submit(context.Background(), Job{PDFPath: path}); err == nil {
 		t.Fatal("token failure ignored")
+	}
+}
+
+func TestSubmissionSuccessDependsOnHTTPStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.pdf")
+	if err := os.WriteFile(path, []byte("%PDF-test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient("http://example.invalid", fixedToken{})
+	client.HTTPClient.Transport = responseTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusCreated, Body: unreadableBody{}, Header: make(http.Header), Request: r}, nil
+	})
+	if err := client.Submit(context.Background(), Job{PDFPath: path}); err != nil {
+		t.Fatalf("HTTP 201 must count as accepted: %v", err)
 	}
 }
 

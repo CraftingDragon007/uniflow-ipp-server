@@ -104,8 +104,10 @@ func TestCloudSuccessAndFailure(t *testing.T) {
 	for _, failed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[failed], func(t *testing.T) {
 			calls := 0
+			var spoolPath string
 			h := NewHandler(Config{SpoolDir: t.TempDir(), Submitter: submitFunc(func(ctx context.Context, job cloud.Job) error {
 				calls++
+				spoolPath = job.PDFPath
 				if _, err := os.Stat(job.PDFPath); err != nil {
 					t.Error(err)
 				}
@@ -125,8 +127,13 @@ func TestCloudSuccessAndFailure(t *testing.T) {
 			if calls != 1 || resp.Code != wantCode || h.jobs[0].State != wantState {
 				t.Fatalf("cloud outcome: calls=%d code=%x state=%d", calls, resp.Code, h.jobs[0].State)
 			}
-			if _, err := os.Stat(h.jobs[0].PDFPath); err != nil {
-				t.Fatal("PDF not retained")
+			_, statErr := os.Stat(spoolPath)
+			if failed {
+				if statErr != nil || h.jobs[0].PDFPath != spoolPath {
+					t.Fatalf("failed upload did not retain PDF: %v", statErr)
+				}
+			} else if !os.IsNotExist(statErr) || h.jobs[0].PDFPath != "" {
+				t.Fatalf("successful upload retained PDF: %v", statErr)
 			}
 		})
 	}

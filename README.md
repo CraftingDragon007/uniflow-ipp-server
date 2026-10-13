@@ -8,8 +8,9 @@ Cloud upload is opt-in and follows the secure PDF multipart path recovered
 from the macOS SmartClient. A separate [Qt WebEngine login app](login-app/README.md)
 can obtain tenant OAuth credentials and generate this server's configuration.
 A generated CUPS test PDF was accepted by one live tenant diagnostic upload
-after matching the native multipart framing. An end-to-end CUPS submission
-through this packaged server is still awaiting verification.
+after matching the native multipart framing. The user subsequently confirmed
+an end-to-end CUPS submission through the packaged systemd service appeared
+in the uniFLOW Online cloud queue. Physical printing was not tested.
 
 ## Build and install on Arch Linux
 
@@ -100,8 +101,8 @@ Parts are `metadata` (`{}`), `filecontent` (the original PDF), and `finishings`
 request also sends `Accept: application/json; charset=utf-8`. Copies, duplex,
 color, staple, punch, and media source are mapped from IPP attributes. The
 expected `X-ClientType: SmartClientForMac` header is retained as a compatibility
-choice. The live diagnostic accepted this request shape with HTTP 201, but it
-was sent by a separate diagnostic script, not by the packaged Go service.
+choice. The live diagnostic accepted this request shape with HTTP 201, and a
+subsequent CUPS test page reached the cloud queue through the Go service.
 
 An optional `--authorize` command supports explicitly configured RFC 8628
 device providers. This is **not** the SmartClient's native registration flow;
@@ -130,12 +131,15 @@ response descriptions are suppressed. There are no automatic upload retries or
 redirects, preventing silent resubmission or document forwarding to unexpected
 hosts.
 
-Spool PDFs survive daemon restarts; job history and IPP IDs are currently
-in-memory only. There is no automatic cleanup, retry queue, cancellation,
-Create-Job/Send-Document support, or physical-printer status tracking.
-Monitor spool disk usage. CUPS may retry failed submissions independently;
-inspect retained jobs before retrying an upload whose remote outcome is
-uncertain.
+After a successful cloud upload, the server removes its local spool PDF. If
+that removal fails, it logs the error but still reports success to avoid a
+duplicate cloud submission. Local-only and failed jobs retain their PDFs;
+these files survive daemon restarts. Job history and IPP IDs are currently
+in-memory only. There is no automatic cleanup for retained jobs, retry queue,
+cancellation, Create-Job/Send-Document support, or physical-printer status
+tracking. Monitor spool disk usage. CUPS may retry failed submissions
+independently; inspect retained jobs before retrying an upload whose remote
+outcome is uncertain.
 
 ## Development
 

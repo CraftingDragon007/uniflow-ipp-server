@@ -206,18 +206,25 @@ func (h *Handler) handlePrintJob(ctx context.Context, msg *ipp.Message) *ipp.Mes
 	log.Printf("saved job %d to %s", jobID, pdfPath)
 	if h.cfg.Submitter != nil {
 		err := h.cfg.Submitter.Submit(ctx, cloud.Job{Name: jobName, PDFPath: pdfPath, Finishings: finishings})
-		h.mu.Lock()
 		if err != nil {
+			h.mu.Lock()
 			job.State = 8
 			job.Reason = "aborted-by-system"
-		} else {
-			job.State = 9
-			job.Reason = "job-completed-successfully"
-		}
-		h.mu.Unlock()
-		if err != nil {
+			h.mu.Unlock()
 			log.Printf("cloud submission failed for job %d; PDF retained at %s: %v", jobID, pdfPath, err)
 			return h.jobError(msg)
+		}
+		// The cloud accepted the job. Cleanup errors must not make CUPS retry it.
+		removeErr := os.Remove(pdfPath)
+		h.mu.Lock()
+		job.State = 9
+		job.Reason = "job-completed-successfully"
+		if removeErr == nil {
+			job.PDFPath = ""
+		}
+		h.mu.Unlock()
+		if removeErr != nil {
+			log.Printf("cloud accepted job %d, but could not remove local PDF at %s: %v", jobID, pdfPath, removeErr)
 		}
 	}
 
