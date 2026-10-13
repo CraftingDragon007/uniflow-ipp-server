@@ -113,10 +113,23 @@ class GuiFlowTests(unittest.TestCase):
         try:
             with patch.object(RegistrationSession, "registration_url", return_value="about:blank"), patch("uniflow_login.app.RegistrationPage", FixturePage):
                 window.begin_login()
+            self.assertIn("Macintosh", window.profile.httpUserAgent())
+            self.assertIn("QtWebEngine/", window.profile.httpUserAgent())
+            self.assertIn("Chrome/", window.profile.httpUserAgent())
             page = window.browser.page()
             loaded = []
             page.loadFinished.connect(loaded.append)
-            page.setHtml("<html><script>function SmartClientOnRegistrationSuccess(){window.fixtureSuccess=true}</script></html>", QUrl("https://tenant.example.invalid/Home/SmartClientRegistration"))
+            page.setHtml("""<html><script>
+function SmartClientOnRegistrationSuccess(){window.fixtureSuccess=true}
+function deliverRegistration(data) {
+    // The tenant chooses its native client contract from the browser identity.
+    if (navigator.userAgent.includes("Macintosh")) {
+        window.webkit.messageHandlers.smartClientMacAuthenticationData.postMessage(data);
+    } else {
+        window.external.SmartClientAuthenticationData(data);
+    }
+}
+</script></html>""", QUrl("https://tenant.example.invalid/Home/SmartClientRegistration"))
             self.assertTrue(wait_for(lambda: loaded and loaded[-1]))
             message = authorization_message(window.session)
             client = OAuthClient()
@@ -125,7 +138,7 @@ class GuiFlowTests(unittest.TestCase):
                 "token_type": "Bearer", "expires_in": 3600,
             }).encode())
             with patch("uniflow_login.app.OAuthClient", return_value=client), patch.object(client.opener, "open", return_value=response):
-                page.runJavaScript(f"window.webkit.messageHandlers.smartClientMacAuthenticationData.postMessage({json.dumps(message)});")
+                page.runJavaScript(f"deliverRegistration({json.dumps(message)});")
                 self.assertTrue(wait_for(lambda: window.result is not None and window.thread is None), window.status.text())
             self.assertTrue(window.export_button.isEnabled())
             self.assertEqual(window.result.token["access_token"], "test-qt-access")

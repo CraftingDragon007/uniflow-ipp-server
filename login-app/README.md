@@ -79,6 +79,10 @@ Every login uses a newly generated RSA key. The JavaScript compatibility
 bridge is injected only into the tenant's main frame. Its native transport
 lives in an isolated Qt script world, with source/origin checks; federated
 identity-provider pages and their frames cannot submit registration data.
+The profile advertises a macOS platform to select the tenant's
+`SmartClientForMac` callback contract, retaining the actual Qt/Chromium browser
+versions. With the default Linux identity the tenant selects Windows callbacks,
+which can leave the registration spinner running after successful login/MFA.
 
 The implementation follows the shipped protocol's MD5-named `HMAC` field,
 RSA PKCS#1 v1.5 key wrapping and AES-CBC/PKCS#7 response. These choices are

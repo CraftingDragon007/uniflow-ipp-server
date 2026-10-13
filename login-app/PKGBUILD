@@ -1,6 +1,6 @@
 pkgname=uniflow-login
 pkgver=1.0.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Qt WebEngine tenant OAuth login and uniFLOW IPP server configuration"
 arch=('any')
 license=('MIT')

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -129,6 +130,10 @@ class LoginWindow(QMainWindow):
         self.export_button.setEnabled(False)
         self.instructions.hide()
         self.profile = QWebEngineProfile(QApplication.instance())
+        # The tenant selects Windows callbacks unless the browser identifies as Mac.
+        self.profile.setHttpUserAgent(re.sub(
+            r"\([^)]*\)", "(Macintosh; Intel Mac OS X 10_15_7)", self.profile.httpUserAgent(), count=1,
+        ))
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
         self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
         self.profile.downloadRequested.connect(lambda download: download.cancel())
