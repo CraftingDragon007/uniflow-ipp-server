@@ -246,7 +246,7 @@ function deliverRegistration(data) {
             client = OAuthClient()
             response = Response(json.dumps({
                 "access_token": "test-qt-access", "refresh_token": "test-qt-refresh",
-                "token_type": "Bearer", "expires_in": 3600,
+                "expires_in": 3600,
             }).encode())
             with patch("uniflow_login.app.OAuthClient", return_value=client), patch.object(client.opener, "open", return_value=response):
                 page.runJavaScript(f"deliverRegistration({json.dumps(message)});")

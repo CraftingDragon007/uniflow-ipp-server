@@ -175,6 +175,8 @@ class ProtocolTests(unittest.TestCase):
             {"access_token": "test", "token_type": "Bearer", "expires_in": -1},
             {"access_token": "test\nprivate", "token_type": "Bearer", "expires_in": 3600},
             {"access_token": "test", "token_type": "Bearer", "expires_in": True},
+            {"access_token": "test", "token_type": 42, "expires_in": 3600},
+            {"access_token": "test", "token_type": "private-unsupported-type", "expires_in": 3600},
         ):
             with patch.object(client.opener, "open", return_value=Response(json.dumps(response).encode())):
                 with self.assertRaises(LoginError):
@@ -187,6 +189,21 @@ class ProtocolTests(unittest.TestCase):
         output = "\n".join(captured.output)
         for secret in ("code-secret", "test-private-message", "test-private-response", "test-secret+&"):
             self.assertNotIn(secret, output)
+
+    def test_native_token_response_with_implicit_bearer(self):
+        client = OAuthClient()
+        for fields in ({}, {"token_type": ""}, {"token_type": None}, {"token_type": "bEaReR"}):
+            with self.subTest(fields=fields):
+                response = {"access_token": "test-native-token", "expires_in": 3600, **fields}
+                with self.assertLogs("uniflow_login", level="INFO") as captured, patch.object(
+                    client.opener, "open", return_value=Response(json.dumps(response).encode()),
+                ):
+                    got = client.exchange(credentials())
+                self.assertEqual(got.token["token_type"], "Bearer")
+                self.assertEqual(got.token["access_token"], "test-native-token")
+                self.assertNotIn("test-native-token", "\n".join(captured.output))
+                if fields.get("token_type") != "bEaReR":
+                    self.assertIn("implicit Bearer contract", "\n".join(captured.output))
 
     def test_private_atomic_export_and_service_paths(self):
         with tempfile.TemporaryDirectory() as temp:

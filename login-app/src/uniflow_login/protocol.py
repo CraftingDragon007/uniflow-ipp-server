@@ -292,8 +292,14 @@ class OAuthClient:
             raise LoginError("OAuth token response has no access token.")
         if any(not 33 <= ord(ch) <= 126 for ch in token["access_token"]):
             raise LoginError("OAuth access token contains invalid header characters.")
-        if str(token.get("token_type", "")).lower() != "bearer":
-            raise LoginError("OAuth token response must specify Bearer token_type.")
+        token_type = token.get("token_type")
+        if token_type is None or token_type == "":
+            state = "missing" if "token_type" not in token else ("null" if token_type is None else "empty")
+            logger.warning("OAuth token_type is %s; using the native SmartClient's implicit Bearer contract", state)
+        elif not isinstance(token_type, str) or token_type.lower() != "bearer":
+            state = "unsupported-string" if isinstance(token_type, str) else "invalid-type"
+            logger.error("OAuth token_type rejected: state=%s (value suppressed)", state)
+            raise LoginError("OAuth token response specifies an unsupported token_type; expected Bearer.")
         lifetime = token.get("expires_in")
         if isinstance(lifetime, str) and lifetime.isdecimal():
             lifetime = int(lifetime)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -148,6 +149,10 @@ func (m *TokenManager) AccessToken(ctx context.Context) (string, error) {
 	var tr TokenResponse
 	if err := m.postForm(ctx, m.cfg.TokenEndpoint, form, &tr); err != nil {
 		return "", fmt.Errorf("token refresh: %w", err)
+	}
+	if tr.TokenType == "" && m.cfg.ClientSecret != "" {
+		log.Print("SmartClient token refresh omitted token_type; using its implicit Bearer contract")
+		tr.TokenType = "Bearer"
 	}
 	if tr.RefreshToken == "" {
 		tr.RefreshToken = m.token.RefreshToken

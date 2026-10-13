@@ -27,6 +27,12 @@ than pretending the handoff succeeded. The app receives tenant-issued
 peer credentials and exchanges the authorization code for OAuth tokens.
 OAuth endpoints, scope and client credentials come from that response, not
 from guessed Microsoft device-flow defaults.
+The native client does not require `token_type` in its token response. This app
+accepts absent, null or empty `token_type` as the native implicit Bearer contract
+and logs a compatibility warning; exports always record `"token_type": "Bearer"`.
+An explicitly unsupported type or malformed token is still rejected. The
+HTTP-200 response in diagnostics means the endpoint answered, not that the
+local token validation or complete registration succeeded.
 
 After login, choose **Export server configuration**. The app creates a new
 private directory containing `config.toml` and `token.json`. Exports do not

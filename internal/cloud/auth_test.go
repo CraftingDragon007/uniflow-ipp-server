@@ -89,6 +89,7 @@ func TestTokenFailures(t *testing.T) {
 			if _, err := m.AccessToken(context.Background()); err == nil {
 				t.Fatal("invalid response accepted")
 			}
+
 			if m.token.AccessToken != "old" {
 				t.Fatal("invalid response replaced token")
 			}
@@ -105,6 +106,47 @@ func TestTokenFailures(t *testing.T) {
 	m.token.RefreshToken = ""
 	if _, err := m.AccessToken(context.Background()); err == nil {
 		t.Fatal("unknown expiration treated as valid")
+	}
+}
+
+func TestNativeRefreshWithImplicitBearer(t *testing.T) {
+	for _, typeField := range []string{"", `,"token_type":""`, `,"token_type":null`} {
+		t.Run(typeField, func(t *testing.T) {
+			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"access_token":"test-native","expires_in":3600` + typeField + `}`))
+			})
+			m.cfg.ClientSecret = "test-client-secret"
+			m.token = &TokenResponse{AccessToken: "old", TokenType: "Bearer", RefreshToken: "test-refresh"}
+			got, err := m.AccessToken(context.Background())
+			if err != nil || got != "test-native" {
+				t.Fatalf("native refresh failed: %v", err)
+			}
+			restored := NewTokenManager(m.cfg)
+			if err := restored.Load(); err != nil {
+				t.Fatal(err)
+			}
+			if restored.token.TokenType != "Bearer" {
+				t.Fatal("implicit native token type was not normalized for persistence")
+			}
+		})
+	}
+}
+
+func TestNativeRefreshRejectsExplicitUnsupportedType(t *testing.T) {
+	for _, typeField := range []string{`"Basic"`, `42`, `true`} {
+		t.Run(typeField, func(t *testing.T) {
+			m, _ := tokenManager(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"access_token":"test-native","expires_in":3600,"token_type":` + typeField + `}`))
+			})
+			m.cfg.ClientSecret = "test-client-secret"
+			m.token = &TokenResponse{AccessToken: "old", TokenType: "Bearer", RefreshToken: "test-refresh"}
+			if _, err := m.AccessToken(context.Background()); err == nil {
+				t.Fatal("unsupported explicit type was accepted")
+			}
+			if m.token.AccessToken != "old" {
+				t.Fatal("failed refresh replaced the old token")
+			}
+		})
 	}
 }
 

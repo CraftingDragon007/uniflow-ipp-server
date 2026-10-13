@@ -45,13 +45,14 @@ class HttpsTests(unittest.TestCase):
         self.context = ssl.create_default_context(cafile=str(cert_path))
         self.requests = []
         self.status = 200
+        self.token = {"access_token": "test-https", "token_type": "Bearer", "expires_in": 3600}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 body = self.rfile.read(int(self.headers["Content-Length"]))
                 owner.requests.append((self.path, dict(self.headers), parse_qs(body.decode())))
-                data = json.dumps({"access_token": "test-https", "token_type": "Bearer", "expires_in": 3600}).encode()
+                data = json.dumps(owner.token).encode()
                 self.send_response(owner.status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
@@ -101,6 +102,12 @@ class HttpsTests(unittest.TestCase):
         with self.assertRaises(LoginError):
             OAuthClient().exchange(replace(credentials(), token_uri=self.endpoint))
         self.assertEqual(self.requests, [])
+
+    def test_native_response_without_token_type(self):
+        del self.token["token_type"]
+        got = OAuthClient(self.context).exchange(replace(credentials(), token_uri=self.endpoint))
+        self.assertEqual(got.token["token_type"], "Bearer")
+        self.assertEqual(got.token["access_token"], "test-https")
 
     def test_redirect_does_not_forward_credentials(self):
         self.status = 302
