@@ -231,6 +231,21 @@ class ProtocolTests(unittest.TestCase):
                 self.assertEqual((directory / "spool").exists(), not system)
             self.assertEqual(len(list(parent.iterdir())), 2)
 
+    def test_managed_export_includes_renewal_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            session = RegistrationSession(tenant())
+            directory = export_bundle(tenant(), result(), Path(temp), tenant().domain, True, session.key)
+            config = tomllib.loads((directory / "config.toml").read_text())
+            state = json.loads((directory / "auth-state.json").read_text())
+            self.assertEqual(config["cloud"]["auth_state_path"], "/var/lib/uniflow-ipp/auth-state.json")
+            self.assertNotIn("oauth_client_secret", config["cloud"])
+            self.assertEqual(state["version"], 2)
+            self.assertEqual(state["peer"]["client_secret"], credentials().client_secret)
+            self.assertEqual(state["token"]["refresh_token"], "test-refresh")
+            self.assertIn("BEGIN PRIVATE KEY", state["renewal_private_key_pem"])
+            self.assertEqual((directory / "auth-state.json").stat().st_mode & 0o777, 0o600)
+            self.assertFalse((directory / "token.json").exists())
+
     def test_export_failure_leaves_no_partial_bundle(self):
         with tempfile.TemporaryDirectory() as temp:
             with patch("os.rename", side_effect=OSError("test write failure")), self.assertRaises(LoginError):

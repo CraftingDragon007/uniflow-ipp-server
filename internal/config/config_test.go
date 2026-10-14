@@ -45,4 +45,13 @@ func TestCloudConfiguration(t *testing.T) {
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("insecure OAuth endpoint accepted")
 	}
+	cfg.Cloud.TokenEndpoint = ""
+	cfg.Cloud.AuthStatePath = "relative/auth-state.json"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("relative managed auth state path accepted")
+	}
+	cfg.Cloud.AuthStatePath = "/var/lib/uniflow-ipp/auth-state.json"
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
 }

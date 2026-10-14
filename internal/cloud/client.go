@@ -44,6 +44,11 @@ type TokenSource interface {
 	AccessToken(context.Context) (string, error)
 }
 
+// A managed credential source can hold renewal until an in-flight upload ends.
+type submissionTokenSource interface {
+	BeginSubmission(context.Context) (string, func(), error)
+}
+
 type Client struct {
 	SubmissionURL string
 	Tokens        TokenSource
@@ -62,7 +67,17 @@ func NewClient(submissionURL string, tokens TokenSource) *Client {
 }
 
 func (c *Client) Submit(ctx context.Context, job Job) error {
-	token, err := c.Tokens.AccessToken(ctx)
+	var token string
+	var release func()
+	var err error
+	if source, ok := c.Tokens.(submissionTokenSource); ok {
+		token, release, err = source.BeginSubmission(ctx)
+		if release != nil {
+			defer release()
+		}
+	} else {
+		token, err = c.Tokens.AccessToken(ctx)
+	}
 	if err != nil {
 		return err
 	}

@@ -70,5 +70,5 @@ Complete your tenant's sign-in. For the packaged systemd service, select
 configuration. Continue with the [main installation guide](README.md#install-and-connect).
 
 The plist and downloaded ISO are tenant-specific. Keep them private and do
-not commit or attach them to public issues. The generated `config.toml` and
-`token.json` contain credentials and need even stricter handling.
+not commit or attach them to public issues. The generated `auth-state.json`
+contains credentials, tokens, and a private renewal key; protect it carefully.

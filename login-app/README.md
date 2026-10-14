@@ -42,9 +42,9 @@ HTTP-200 response in diagnostics means the endpoint answered, not that the
 local token validation or complete registration succeeded.
 
 After login, choose **Export server configuration**. The app creates a new
-private directory containing `config.toml` and `token.json`. Exports do not
+private directory containing `config.toml` and `auth-state.json`. Exports do not
 overwrite an existing configuration. In the default **current-user mode**,
-the config points to the exported token and a private spool directory; run
+the config points to the exported auth state and a private spool directory; run
 the command displayed in the app to start the server.
 
 ## Packaged system service
@@ -52,14 +52,20 @@ the command displayed in the app to start the server.
 Select **Export paths for the packaged system service** before exporting.
 The app then generates paths matching the Arch server package:
 
-- token: `/var/lib/uniflow-ipp/token.json`
+- managed auth state: `/var/lib/uniflow-ipp/auth-state.json`
 - spool: `/var/spool/uniflow-ipp`
 - CUPS queue: `uniflow_secure`
 
 Install the server package first. The app displays commands to install the
-configuration as `root:uniflow-ipp` mode `0640`, install the token as
+configuration as `root:uniflow-ipp` mode `0640`, install the auth state as
 `uniflow-ipp:uniflow-ipp` mode `0600`, and restart the service. They must be
 run manually; the GUI itself never needs root.
+
+For an installation using an older `token.json` export, sign in again after
+upgrading both packages and install the new files shown by the app. The old
+export did not save the RSA private key required for unattended renewal.
+The service keeps supporting old token files, but they cannot renew peer
+credentials automatically.
 
 The management-server field defaults to `UFOTenantDomain`, matching the
 macOS client's actual initialization. Change it only if the tenant requires
@@ -148,17 +154,20 @@ The implementation follows the shipped protocol's MD5-named `HMAC` field,
 RSA PKCS#1 v1.5 key wrapping and AES-CBC/PKCS#7 response. These choices are
 compatibility requirements, not newly designed cryptography. TLS validation
 and the Chromium sandbox remain enabled. OAuth POST redirects are not
-followed. Private keys and browser credentials are not exported or logged.
-Token and config files contain secrets and are written as mode `0600` in a
+followed. The registration RSA private key is exported in `auth-state.json`
+for renewal, but is never logged. The auth state contains peer credentials
+and OAuth tokens; it and the config are written as mode `0600` in a
 mode `0700` directory. Do not commit or share them.
 
 Initial login/configuration export and a cloud upload through the server have
 been confirmed with one tenant. Embedded-browser policies at other identity
 providers may refuse login. The server's regular access-token refresh is
-supported, but peer credential renewal and continuous peer-registration
-heartbeats are not. The config records credential expiration in a comment;
-log in again when those credentials need renewing. Other tenants may reject
-this unofficial client.
+supported. The service attempts silent peer credential renewal in the seven
+days before expiry and saves new credentials and tokens together. If this
+fails persistently, log in again and install a fresh export. Continuous
+peer-registration heartbeats are not implemented. Renewal is covered by local
+protocol tests but has not yet been confirmed with a live tenant. Other
+tenants may reject this unofficial client.
 
 ## Tests
 

@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -49,6 +50,7 @@ type CloudConfig struct {
 	DeviceEndpoint    string `toml:"device_endpoint"`
 	TokenEndpoint     string `toml:"token_endpoint"`
 	TokenPath         string `toml:"token_path"`
+	AuthStatePath     string `toml:"auth_state_path"`
 	ManagementServer  string `toml:"management_server"`
 	UserID            string `toml:"user_id"`
 }
@@ -144,8 +146,11 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("cloud.user_id must be a user UUID")
 			}
 		}
-		if c.Cloud.TokenPath == "" {
+		if c.Cloud.AuthStatePath == "" && c.Cloud.TokenPath == "" {
 			return fmt.Errorf("cloud.token_path is required")
+		}
+		if c.Cloud.AuthStatePath != "" && !filepath.IsAbs(c.Cloud.AuthStatePath) {
+			return fmt.Errorf("cloud.auth_state_path must be absolute")
 		}
 	}
 	for _, endpoint := range []string{c.Cloud.DeviceEndpoint, c.Cloud.TokenEndpoint} {

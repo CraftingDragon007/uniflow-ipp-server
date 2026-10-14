@@ -264,7 +264,7 @@ function deliverRegistration(data) {
                 bundles = list(Path(temp).iterdir())
                 self.assertEqual(len(bundles), 1)
                 self.assertTrue((bundles[0] / "config.toml").is_file())
-                self.assertTrue((bundles[0] / "token.json").is_file())
+                self.assertTrue((bundles[0] / "auth-state.json").is_file())
                 self.assertNotIn("test-qt-access", window.instructions.toPlainText())
             popup = window.make_popup()
             self.assertIsNotNone(popup)

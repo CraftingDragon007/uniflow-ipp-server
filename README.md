@@ -46,7 +46,7 @@ configured.
    Complete sign-in and MFA. If your tenant opens the system browser, keep
    the login app open until registration finishes. Before clicking **Export
    server configuration**, select **Export paths for the packaged system
-   service**. The app exports a private `config.toml` and `token.json` and
+   service**. The app exports a private `config.toml` and `auth-state.json` and
    displays commands to install them. Run those commands; the app does not
    make system changes itself.
 
@@ -76,26 +76,35 @@ The packaged service runs as the `uniflow-ipp` user with these paths:
 | Purpose | Path |
 | --- | --- |
 | Configuration | `/etc/uniflow-ipp/config.toml` |
-| OAuth token | `/var/lib/uniflow-ipp/token.json` |
+| Managed credentials, tokens, renewal key | `/var/lib/uniflow-ipp/auth-state.json` |
+| Legacy OAuth token | `/var/lib/uniflow-ipp/token.json` |
 | PDF spool | `/var/spool/uniflow-ipp` |
 | IPP endpoint | `ipp://127.0.0.1:8631/ipp` |
 
-The login app's **system service** export uses these token and spool paths.
+The login app's **system service** export uses the managed auth and spool paths.
 Its default **current-user** export uses paths under the exported directory
 and will not work unchanged with the packaged service, which has home
 directory access blocked. The login app shows the required install commands:
 configuration is installed as `root:uniflow-ipp` with mode `0640`, and the
-token as `uniflow-ipp:uniflow-ipp` with mode `0600`. Both contain credentials;
+auth state as `uniflow-ipp:uniflow-ipp` with mode `0600`. The auth state
+contains the RSA renewal key, peer credentials, and OAuth tokens;
 do not commit or share them.
 
 The sample config has `cloud.enabled = false`. In that mode, jobs are held as
 local PDFs only. The login app's export enables cloud submission and includes
-the management server, user ID, OAuth settings, and token path supplied by
-registration. The server refreshes access tokens and stores replacements
-privately. Peer credential renewal still requires signing in again before
-those credentials expire.
+the management server, user ID, and private auth-state path supplied by
+registration. The server refreshes access tokens and attempts peer credential
+renewal during the seven days before expiry, even when no jobs arrive. It
+saves both rotated credentials and tokens atomically. If renewal repeatedly
+fails, sign in again and install a fresh export.
 
-After changing the installed config or token, restart the service:
+**Existing installation upgrade:** update both packages, then sign in once
+more with the login app and install its new `config.toml` and
+`auth-state.json` using the displayed commands. Earlier exports did not save
+the RSA key needed to decrypt renewed credentials. The old `token.json`
+format remains supported but cannot renew peer credentials automatically.
+
+After changing the installed config or auth state, restart the service:
 
 ```sh
 sudo systemctl restart uniflow-ipp.service
@@ -121,8 +130,10 @@ mapped from IPP job attributes where supported.
   `Create-Job`/`Send-Document`, physical printer status, public print, and
   zero-trust workflows are not implemented.
 
-The companion login app implements initial SmartClient registration. Ongoing
-peer-registration heartbeats and peer credential renewal are not implemented.
+The companion login app implements initial SmartClient registration. The
+service implements silent peer credential renewal; ongoing peer-registration
+heartbeats are not implemented. Renewal has been tested against local protocol
+fixtures but not yet confirmed with a live tenant.
 See [login-app/README.md](login-app/README.md) for its setup and limitations.
 
 ## Development

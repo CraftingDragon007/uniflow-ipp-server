@@ -337,7 +337,7 @@ class LoginWindow(QMainWindow):
             self.profile = None
 
     def export_config(self):
-        if self.result is None or self.tenant is None:
+        if self.result is None or self.tenant is None or self.session is None:
             return
         parent = QFileDialog.getExistingDirectory(self, "Choose parent directory for a new private configuration bundle")
         if not parent:
@@ -345,6 +345,7 @@ class LoginWindow(QMainWindow):
         try:
             directory = export_bundle(
                 self.tenant, self.result, Path(parent), self.management.text(), self.system_service.isChecked(),
+                self.session.key,
             )
         except LoginError as exc:
             self.show_error(str(exc))
@@ -355,7 +356,7 @@ class LoginWindow(QMainWindow):
                 "Install the server package first, then run:",
                 "sudo install -d -o uniflow-ipp -g uniflow-ipp -m 0700 /var/lib/uniflow-ipp",
                 f"sudo install -o root -g uniflow-ipp -m 0640 {quote(directory / 'config.toml')} /etc/uniflow-ipp/config.toml",
-                f"sudo install -o uniflow-ipp -g uniflow-ipp -m 0600 {quote(directory / 'token.json')} /var/lib/uniflow-ipp/token.json",
+                f"sudo install -o uniflow-ipp -g uniflow-ipp -m 0600 {quote(directory / 'auth-state.json')} /var/lib/uniflow-ipp/auth-state.json",
                 "sudo systemctl restart uniflow-ipp.service",
             ))
         else:
@@ -363,7 +364,7 @@ class LoginWindow(QMainWindow):
         self.instructions.setPlainText(instructions)
         self.instructions.show()
         logger.info("Private configuration bundle exported; system_service=%s", self.system_service.isChecked())
-        self.status.setText(f"Exported config.toml and token.json to {directory}. Both files are mode 0600.")
+        self.status.setText(f"Exported config.toml and auth-state.json to {directory}. Both files are mode 0600.")
 
     def closeEvent(self, event):
         self.cancel_login()

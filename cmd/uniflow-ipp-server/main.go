@@ -44,6 +44,9 @@ func main() {
 		TokenEndpoint: cfg.Cloud.TokenEndpoint, TokenPath: cfg.Cloud.TokenPath,
 	})
 	if *authorize {
+		if cfg.Cloud.AuthStatePath != "" {
+			log.Fatal("device authorization is unavailable with managed peer credentials")
+		}
 		dar, err := tokens.BeginDeviceAuthorization(ctx)
 		if err != nil {
 			log.Fatalf("begin authorization: %v", err)
@@ -57,13 +60,23 @@ func main() {
 	}
 	var submitter server.Submitter
 	if cfg.Cloud.Enabled {
-		if err := tokens.Load(); err != nil {
-			log.Fatalf("load cloud token: %v", err)
+		var source cloud.TokenSource = tokens
+		if cfg.Cloud.AuthStatePath != "" {
+			managed := cloud.NewManagedAuth(cfg.Cloud.AuthStatePath, cfg.Cloud.TenantDomain, cfg.Cloud.UserID, cfg.Cloud.ManagementServer, nil)
+			if err := managed.Load(); err != nil {
+				log.Fatalf("load managed cloud credentials: %v", err)
+			}
+			source = managed
+			go managed.Run(ctx)
+		} else {
+			if err := tokens.Load(); err != nil {
+				log.Fatalf("load cloud token: %v", err)
+			}
+			if _, err := tokens.AccessToken(ctx); err != nil {
+				log.Fatalf("cloud credentials: %v", err)
+			}
 		}
-		if _, err := tokens.AccessToken(ctx); err != nil {
-			log.Fatalf("cloud credentials: %v", err)
-		}
-		submitter = cloud.NewClient(cfg.Cloud.SubmissionURL(), tokens)
+		submitter = cloud.NewClient(cfg.Cloud.SubmissionURL(), source)
 	} else {
 		log.Print("cloud disabled: jobs are retained locally, not uploaded or printed")
 	}
